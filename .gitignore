@@ -15,6 +15,7 @@
 !research/v8_research/evaluate_strategy.py
 !research/v8_research/batch1_hard_checks.py
 !research/v8_research/batch2A1_UF_single_factor.py
+!research/v8_research/batch2A15_alpha_attribution.py
 !reports/
 !reports/tushare/
 !reports/tushare/v8_research/
@@ -63,3 +64,19 @@
 !reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_F_limitations.md
 !reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_conclusion.md
 !reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_file_sha256.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_U_filter_only_daily_returns.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_U_filter_only_summary.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_U_keep_drop_summary.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_U_keep_drop_trades.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_conclusion.md
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_cost_decay_by_bucket.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_cost_decay_by_day.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_cost_decay_by_industry.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_cost_decay_by_stock.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_file_sha256.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_limitations.md
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_liquidity_bucket_score_effectiveness.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_market_regime_group_summary.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_market_state_daily_proxy.csv
+!reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_original_v7_metrics.csv
