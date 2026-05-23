@@ -17,6 +17,7 @@
 !research/v8_research/batch2A1_UF_single_factor.py
 !research/v8_research/batch2A15_alpha_attribution.py
 !research/v8_research/batch2B_R0_market_regime_diagnostic.py
+!research/v8_research/forward_shadow_runner.py
 !reports/
 !reports/tushare/
 !reports/tushare/v8_research/
@@ -91,3 +92,17 @@
 !reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_regime_concentration.csv
 !reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_regime_daily_returns.csv
 !reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_regime_summary.csv
+!reports/tushare/v8_research/forward_shadow_setup/
+!reports/tushare/v8_research/forward_shadow_setup/U2_definition.md
+!reports/tushare/v8_research/forward_shadow_setup/candidate_S0_base.yaml
+!reports/tushare/v8_research/forward_shadow_setup/candidate_S0_tail_down.yaml
+!reports/tushare/v8_research/forward_shadow_setup/candidate_S1_U2_filter_only.yaml
+!reports/tushare/v8_research/forward_shadow_setup/candidate_S1_U2_tail_down.yaml
+!reports/tushare/v8_research/forward_shadow_setup/forward_shadow_evaluation_plan.md
+!reports/tushare/v8_research/forward_shadow_setup/forward_shadow_file_sha256.csv
+!reports/tushare/v8_research/forward_shadow_setup/forward_shadow_runner.py
+!reports/tushare/v8_research/forward_shadow_setup/forward_shadow_schema.csv
+!reports/tushare/v8_research/forward_shadow_setup/forward_shadow_setup_conclusion.md
+!reports/tushare/v8_research/forward_shadow_setup/tail_down_definition.md
+!reports/tushare/v8_forward_shadow/
+!reports/tushare/v8_forward_shadow/README.md

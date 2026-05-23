@@ -1,0 +1,46 @@
+field,scope,type,nullable,description
+trade_date,all,string,false,Signal trading date in YYYYMMDD.
+strategy_id,all,string,false,One of the four locked tracking lines.
+candidate_id,all,string,false,control_1/control_2/candidate_1/candidate_2.
+tail_down_flag,all,bool,false,True when market_tail_ret_median < 0.
+U2_filter_flag,all,bool,false,True when the line applies U2 filter-only logic.
+tail_down_gate_flag,all,bool,false,True when the line gates on R1_tail_down.
+original_v7_rank,signals/trades,int,true,Rank in original v7 daily score order before U2 or tail gate.
+final_selected_flag,signals/trades,bool,false,True for frozen paper-tracking names.
+no_trade_reason,status,string,true,Reason for no signal, such as tail_down_not_triggered or no score file.
+code,signals/trades,string,true,Stock code.
+name,signals/trades,string,true,Stock name when available.
+score,signals/trades,float,true,Locked v7 score; no refit or rescale.
+entry_time,signals/trades,string,false,Expected entry time, fixed at 14:55.
+expected_entry_vwap,signals/ledgers,float,true,14:55 bar VWAP after available; pending at signal freeze if unknown.
+exit_rule,signals/ledgers,string,false,Locked v7 exit rule.
+expected_exit_time,signals/ledgers,string,true,Expected or realized v7 exit time.
+expected_exit_vwap,ledgers,float,true,Exit VWAP after settlement.
+theoretical_5bp_return,ledgers,float,true,Ledger A per-trade net return.
+execution_10bp_impact_return,ledgers,float,true,Ledger B per-trade net return after 10bp plus impact estimate.
+estimated_impact_cost,ledgers,float,true,Estimated impact cost for execution ledger.
+estimated_fill_ratio,ledgers,float,true,Estimated fill ratio under execution ledger.
+partial_fill_flag,ledgers,bool,true,True if execution ledger indicates partial fill.
+zero_fill_flag,ledgers,bool,true,True if execution ledger indicates zero fill.
+limit_up_block_flag,ledgers,bool,true,True if buy was blocked by limit-up or missing executable bar.
+limit_down_block_flag,ledgers,bool,true,True if sell was blocked by limit-down or missing executable bar.
+suspend_flag,ledgers,bool,true,True if suspended or missing required trading bars.
+daily_strategy_return,summary,float,true,Daily equal-weight strategy return for a ledger.
+cumulative_strategy_return,summary,float,true,Cumulative return since forward tracking start.
+position_weight,signals/trades,float,true,Equal weight among actual selected names for that strategy/date.
+avg_amount_60d,signals/trades,float,true,Prior rolling 60-day average amount used for U2 rank.
+rank_amount_60d,signals/trades,float,true,Descending liquidity rank inside current downloaded Top3000 matrix.
+in_u2,signals/trades,bool,true,True when rank_amount_60d <= 2500.
+market_tail_ret_median,signals/status,float,true,Market cross-sectional median of tail_ret_1420_1450.
+freeze_time_beijing,signals/status,string,false,Timestamp when the paper signal file was frozen.
+paper_tracking_only,all,bool,false,Always true; runner never sends orders.
+ledger_id,ledgers,string,false,theoretical_5bp_ledger or execution_10bp_impact_ledger.
+realized_return,ledgers,float,true,Realized return after settlement.
+ledger_status,ledgers,string,true,pending_exit_settlement or settled.
+selected_count,status/quality,int,false,Number of selected names for the strategy/date.
+estimated_avg_fill_ratio,quality,float,true,Daily average estimated fill ratio.
+partial_fill_count,quality,int,true,Count of partial-fill events.
+zero_fill_count,quality,int,true,Count of zero-fill events.
+limit_up_block_count,quality,int,true,Count of buy blocks.
+limit_down_block_count,quality,int,true,Count of sell blocks.
+suspend_count,quality,int,true,Count of suspended/missing-bar names.

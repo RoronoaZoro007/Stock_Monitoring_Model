@@ -1,0 +1,30 @@
+candidate_id: control_2
+strategy_id: S1_U2_filter_only_no_refill
+status: locked_forward_shadow_control
+model_version: v7_cap20_strong_label_003
+v7_locked_commit: f688eec575af4667681d87b5b2c1fca72754e399
+score_generation:
+  historical_reference_file: locked_artifacts/v7_cap20_strong_label_003/validation/validation_predictions.csv.gz
+  forward_method: run locked v7 feature and model pipeline; do not refit
+  model_file: locked_artifacts/v7_cap20_strong_label_003/model/model.pkl
+  feature_file: locked_artifacts/v7_cap20_strong_label_003/config/feature_columns.json
+signal_time: after 14:50 bar complete
+freeze_before: 14:55 entry bar
+entry_time: "14:55"
+entry_price: 5-minute bar VWAP
+exit_rule: v7 locked exit rule
+ledger_A: theoretical_5bp_ledger
+ledger_B: execution_10bp_impact_ledger
+use_U2_filter_only: true
+U2_definition_file: U2_definition.md
+refill_to_top10: false
+use_tail_down_gate: false
+no_trade_conditions:
+  - no valid v7 score matrix before freeze
+  - no original v7 Top10 name remains after U2 filtering
+weighting: equal weight among remaining selected names
+insufficient_candidates: do not refill; trade actual remaining count equally weighted
+output_fields: see forward_shadow_schema.csv
+auto_ordering: prohibited
+auto_parameter_change: prohibited
+paper_tracking_only: true
