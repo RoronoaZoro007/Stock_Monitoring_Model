@@ -16,6 +16,7 @@
 !research/v8_research/batch1_hard_checks.py
 !research/v8_research/batch2A1_UF_single_factor.py
 !research/v8_research/batch2A15_alpha_attribution.py
+!research/v8_research/batch2B_R0_market_regime_diagnostic.py
 !reports/
 !reports/tushare/
 !reports/tushare/v8_research/
@@ -80,3 +81,13 @@
 !reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_market_regime_group_summary.csv
 !reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_market_state_daily_proxy.csv
 !reports/tushare/v8_research/batch2A15_alpha_attribution/batch2A15_original_v7_metrics.csv
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_base_strategy_summary.csv
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_candidate_screening.csv
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_conclusion.md
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_file_sha256.csv
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_limitations.md
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_matched_random_summary.csv
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_regime_concentration.csv
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_regime_daily_returns.csv
+!reports/tushare/v8_research/batch2B_R0_market_regime_diagnostic/batch2B_R0_regime_summary.csv
