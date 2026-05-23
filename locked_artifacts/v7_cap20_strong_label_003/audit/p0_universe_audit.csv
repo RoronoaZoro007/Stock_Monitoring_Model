@@ -1,0 +1,12 @@
+item,value,evidence
+pool_size,3000,liquid_top3000_20251120_20260213.csv
+ranking_type,静态,不是每日滚动股票池。
+rank_start,20251120,排名文件字段 rank_start。
+rank_end,20260213,排名文件字段 rank_end。
+validation_start,20260224,验证集起点。
+uses_after_validation_start,False,rank_end=20260213 < validation_start=20260224。
+uses_future_for_early_training_dates,True,对 2025-11-20 以前训练样本，静态池使用了其后的流动性信息。
+liquidity_metric,avg_amount,排名文件字段 avg_amount。
+liquidity_window_days,60,排名文件字段 days，当前为 60。
+st_handling,未从股票池剔除；特征生成时按 ST 5% 涨跌幅阈值过滤近涨跌停样本,code_limit_threshold。
+new_delist_suspend_handling,上市前/停牌无分钟线不生成样本；退市状态未做独立过滤,样本生成依赖分钟线和 daily。

@@ -1,0 +1,4 @@
+split,rows,auc
+train_in_sample,1153918,0.7430487751418396
+validation,170505,0.5334428792730082
+unused_test,0,

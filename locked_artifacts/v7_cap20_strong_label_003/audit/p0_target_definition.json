@@ -1,0 +1,14 @@
+{
+  "target_return_formula": "sell_vwap*(1-sell_slippage-sell_commission-stamp_tax)/(entry_vwap*(1+buy_slippage+buy_commission))-1",
+  "entry_vwap": "当日 14:55 5分钟 bar VWAP",
+  "sell_vwap": "次日出场执行 bar VWAP: 09:40/09:50/10:05/10:30",
+  "cost_config": {
+    "buy_commission": 0.00025,
+    "sell_commission": 0.00025,
+    "stamp_tax": 0.0005,
+    "buy_slippage": 0.0005,
+    "sell_slippage": 0.0005
+  },
+  "label_v7": "label_static_003 = int(target_return > 0.003)",
+  "threshold_reason": "0.3% 来自预先提出的交易摩擦门槛：20bp 成本 + 约10bp 期望利润；本轮 v7 选择使用了验证结果。"
+}

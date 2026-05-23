@@ -1,0 +1,7 @@
+item,value,evidence
+near_up_limit_1450_selected,0,样本生成阶段已过滤，理论应为 0。
+near_down_limit_1450_selected,0,样本生成阶段已过滤，理论应为 0。
+missing_exit_selected,0,有样本才说明次日存在可用退出分钟线。
+min_amount_sofar_filter,20000000,候选生成时 amount_sofar >= 2000万。
+explicit_limit_fill_model,NO,未建模涨停买不进/跌停卖不出；使用 VWAP 理想成交。
+impact_cost_model,NO,未建模冲击成本。

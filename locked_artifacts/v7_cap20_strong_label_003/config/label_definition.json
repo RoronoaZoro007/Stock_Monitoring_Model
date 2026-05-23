@@ -1,0 +1,21 @@
+{
+  "label_column": "label_static_003",
+  "definition": "int(target_return > 0.003)",
+  "target_return_formula": "sell_vwap*(1-sell_slippage-sell_commission-stamp_tax)/(entry_vwap*(1+buy_slippage+buy_commission))-1",
+  "entry_price": "当日 14:55 5分钟 bar VWAP",
+  "exit_price": "次日 09:40/09:50/10:05/10:30 5分钟 bar VWAP，根据止盈止损规则选择",
+  "cost_config": {
+    "buy_commission": 0.00025,
+    "sell_commission": 0.00025,
+    "stamp_tax": 0.0005,
+    "buy_slippage": 0.0005,
+    "sell_slippage": 0.0005
+  },
+  "exit_config": {
+    "take_profit_0935": 0.015,
+    "take_profit_0945": 0.012,
+    "stop_loss": -0.018,
+    "weak_loss": -0.004,
+    "final_exit_time": "10:30"
+  }
+}

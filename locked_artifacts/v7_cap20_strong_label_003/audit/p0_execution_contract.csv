@@ -1,0 +1,11 @@
+item,current_setting,evidence
+model_type,尾盘隔夜选股模型,用 14:50 前可得特征打分，假设 14:55 5分钟 bar VWAP 买入，次日上午择机卖出。
+signal_time,14:50 bar 完成后、14:55 执行前,特征最多使用到 14:50；entry_vwap 使用 14:55 bar，只作为回测成交假设。
+buy_price,当日 14:55 5分钟 bar VWAP,"vwap(amount, vol, close, low, high)，见 tushare_tail_model.py:373。"
+sell_price,次日 09:40/09:50/10:05/10:30 对应 bar VWAP,由 09:35/09:45/10:00 检查止盈止损后执行；未触发则 10:30。
+target_return,净收益,sell_vwap*(1-sell_slippage-sell_commission-stamp_tax)/(entry_vwap*(1+buy_slippage+buy_commission))-1。
+top_n,10,每天按 score 降序取 Top10。
+weighting,等权,日收益=Top10 target_return 算术平均。
+candidate_lt_10,按实际入选数量等权,当前验证期最少候选数 > 10，因此未触发。
+limit_suspend_handling,部分处理,14:50 接近涨跌停过滤；停牌无分钟线则不生成样本；未显式模拟涨停买不进/跌停卖不出。
+cost_included,已包含基础交易成本,佣金、印花税、基础滑点已计入；过户费/冲击成本未计入。

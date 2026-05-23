@@ -1,0 +1,11 @@
+{
+  "gross_profit_sum": 5.594846142180547,
+  "gross_loss_abs_sum": 4.995894765361843,
+  "avg_winning_trade": 0.02160172255668165,
+  "avg_losing_trade": -0.015563535094585182,
+  "win_loss_ratio_abs": 1.3879701767882577,
+  "max_single_gain": 0.1220215336890158,
+  "max_single_loss": -0.0891415877335183,
+  "max_consecutive_losing_trades_in_selected_order": 12,
+  "max_consecutive_losing_days": 4
+}

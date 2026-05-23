@@ -1,0 +1,109 @@
+{
+  "drawdown_start": "20260305",
+  "drawdown_end": "20260320",
+  "max_drawdown": -0.06142807961348895,
+  "duration_trading_days": 12,
+  "main_loss_stocks": [
+    {
+      "ts_code": "688291.SH",
+      "name": "金橙子",
+      "target_return": -0.1005342584854257
+    },
+    {
+      "ts_code": "688716.SH",
+      "name": "中研股份",
+      "target_return": -0.0600386779138099
+    },
+    {
+      "ts_code": "001360.SZ",
+      "name": "南矿集团",
+      "target_return": -0.057129732291089
+    },
+    {
+      "ts_code": "688081.SH",
+      "name": "兴图新科",
+      "target_return": -0.0466814470020521
+    },
+    {
+      "ts_code": "688767.SH",
+      "name": "博拓生物",
+      "target_return": -0.0450111470000986
+    },
+    {
+      "ts_code": "301321.SZ",
+      "name": "翰博高新",
+      "target_return": -0.043462445611890305
+    },
+    {
+      "ts_code": "300521.SZ",
+      "name": "爱司凯",
+      "target_return": -0.0427362884902029
+    },
+    {
+      "ts_code": "002295.SZ",
+      "name": "精艺股份",
+      "target_return": -0.0404899031355109
+    },
+    {
+      "ts_code": "002363.SZ",
+      "name": "隆基机械",
+      "target_return": -0.0388083499721137
+    },
+    {
+      "ts_code": "300508.SZ",
+      "name": "维宏股份",
+      "target_return": -0.0378620930118075
+    },
+    {
+      "ts_code": "688682.SH",
+      "name": "霍莱沃",
+      "target_return": -0.037300877360292
+    },
+    {
+      "ts_code": "301002.SZ",
+      "name": "崧盛股份",
+      "target_return": -0.0354657127256143
+    },
+    {
+      "ts_code": "600191.SH",
+      "name": "华资实业",
+      "target_return": -0.0353257223698086
+    },
+    {
+      "ts_code": "001359.SZ",
+      "name": "平安电工",
+      "target_return": -0.0345184266480017
+    },
+    {
+      "ts_code": "688109.SH",
+      "name": "品茗科技",
+      "target_return": -0.030640351359582
+    },
+    {
+      "ts_code": "001288.SZ",
+      "name": "运机集团",
+      "target_return": -0.0303010372172823
+    },
+    {
+      "ts_code": "002976.SZ",
+      "name": "瑞玛精密",
+      "target_return": -0.0286157031567589
+    },
+    {
+      "ts_code": "688510.SH",
+      "name": "航亚科技",
+      "target_return": -0.02808864293377
+    },
+    {
+      "ts_code": "688448.SH",
+      "name": "磁谷科技",
+      "target_return": -0.0273272838996151
+    },
+    {
+      "ts_code": "605060.SH",
+      "name": "联德股份",
+      "target_return": -0.027217839348147
+    }
+  ],
+  "market_proxy_return_sum": -0.07544842933686649
+}

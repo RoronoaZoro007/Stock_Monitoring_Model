@@ -1,0 +1,10 @@
+pandas
+numpy
+scikit-learn
+pyarrow
+requests
+akshare
+baostock
+tqdm
+matplotlib
+tushare

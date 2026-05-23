@@ -1,0 +1,7 @@
+dataset,rows_or_symbols,start_date,end_date,note
+raw_minute,3000,20240521,20260521,原始分钟线审计
+raw_daily,1436102,20240521,20260521,raw daily within repaired file
+clean_daily,1438275,20240521,20260521,daily_repaired_top3000.parquet
+train,1153918,20240612,20260213,v7 train
+validation,170505,20260224,20260520,v7 validation
+unused_test,0,,,当前没有完全未使用测试集

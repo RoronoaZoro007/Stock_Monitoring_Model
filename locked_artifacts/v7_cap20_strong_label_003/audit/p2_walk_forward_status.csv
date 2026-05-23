@@ -1,0 +1,2 @@
+item,value,note
+v7_walk_forward_done,False,当前 v7 是固定参数训练集拟合 + 最近三个月验证；未完成独立滚动训练前向验证。此前 top500/top1000/top2000 基础模型做过训练期 walk-forward，但不等同于 v7。

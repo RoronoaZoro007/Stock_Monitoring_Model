@@ -1,0 +1,7 @@
+# Lock branch policy: commit only the v7 locked artifact bundle and the script
+# that regenerates it. Raw market data and local runtime files stay local.
+*
+!.gitignore
+!lock_v7_artifacts.py
+!locked_artifacts/
+!locked_artifacts/**

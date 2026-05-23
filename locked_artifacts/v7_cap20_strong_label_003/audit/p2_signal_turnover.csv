@@ -1,0 +1,9 @@
+metric,value
+validation_total_trades,580
+days,58
+avg_candidates_per_day,2939.7413793103447
+avg_selected_per_day,10.0
+min_selected_per_day,10
+max_selected_per_day,10
+daily_turnover_assumption,1.0
+holding_period,当日 14:55 至次日 09:40/09:50/10:05/10:30

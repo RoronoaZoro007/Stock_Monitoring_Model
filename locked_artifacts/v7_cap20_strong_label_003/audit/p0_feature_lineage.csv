@@ -1,0 +1,35 @@
+field,meaning,formula,data_time_range,uses_after_1500_today,uses_next_day,uses_full_day_high_low_close_amount,available_before_signal
+ret_to_prev_close_1450,14:50 价格相对前收,close_1450 / prev_close_use - 1,当日 <=14:50 + 前一交易日 close,N,N,N,Y
+intraday_ret_1450,日内 09:35 至 14:50 收益,close_1450 / open_0935 - 1,"当日 09:35,14:50",N,N,N,Y
+tail_ret_1420_1450,14:20 至 14:50 尾盘动量,close_1450 / close_1420 - 1,"当日 14:20,14:50",N,N,N,Y
+tail_ret_1430_1450,14:30 至 14:50 尾盘动量,close_1450 / close_1430 - 1,"当日 14:30,14:50",N,N,N,Y
+late_ret_1445_1450,14:45 至 14:50 短动量,close_1450 / close_1445 - 1,"当日 14:45,14:50",N,N,N,Y
+afternoon_ret_1305_1450,午后动量,close_1450 / close_1305 - 1,"当日 13:05,14:50",N,N,N,Y
+vwap_pos_1450,14:50 相对当日已发生 VWAP,close_1450 / VWAP(<=14:50) - 1,当日 <=14:50,N,N,N,Y
+close_to_high_sofar,14:50 距离已发生最高价,close_1450 / max(high <=14:50) - 1,当日 <=14:50,N,N,不是全天 high,Y
+close_to_low_sofar,14:50 距离已发生最低价,close_1450 / min(low <=14:50) - 1,当日 <=14:50,N,N,不是全天 low,Y
+range_sofar,已发生日内振幅,max(high <=14:50) / min(low <=14:50) - 1,当日 <=14:50,N,N,不是全天 high/low,Y
+tail_amount_share,14:30-14:50 成交额占比,sum(amount 14:30-14:50) / sum(amount <=14:50),当日 <=14:50,N,N,不是全天 amount,Y
+tail_amount_vs_prev20,尾盘成交额相对前 20 日均量,tail_amount / (amount20_prev * 5/48) - 1,当日 14:30-14:50 + 前 20 交易日 amount,N,N,N,Y
+amount_sofar_log,截至 14:50 成交额,log1p(sum(amount <=14:50)),当日 <=14:50,N,N,不是全天 amount,Y
+open_gap,开盘跳空,open_0935 / prev_close_use - 1,当日 09:35 + 前收,N,N,N,Y
+prev_ret_1d,前一日收益,close[t-1]/close[t-2]-1,t-1 及以前日线,N,N,前日 full day,Y
+prev_ret_3d,前三日收益,close[t-1]/close[t-4]-1,t-1 及以前日线,N,N,前日 full day,Y
+prev_ret_5d,前五日收益,close[t-1]/close[t-6]-1,t-1 及以前日线,N,N,前日 full day,Y
+prev_volatility_20d,前 20 日波动率,"std(pct_change(close), shift 1, rolling 20)",t-1 及以前日线,N,N,历史 full day,Y
+price_vs_ma5_prev,14:50 相对前 MA5,close_1450 / ma5_prev - 1,当日 14:50 + t-1 及以前日线,N,N,历史 full day,Y
+price_vs_ma10_prev,14:50 相对前 MA10,close_1450 / ma10_prev - 1,当日 14:50 + t-1 及以前日线,N,N,历史 full day,Y
+price_vs_ma20_prev,14:50 相对前 MA20,close_1450 / ma20_prev - 1,当日 14:50 + t-1 及以前日线,N,N,历史 full day,Y
+prev_amount_ratio_5_20,前 5/20 日成交额比,amount5_prev / amount20_prev - 1,t-1 及以前日线,N,N,历史 full day amount,Y
+open_auction_ret,当日开盘集合竞价收益,open_auction_close / prev_close_use - 1,当日开盘集合竞价,N,N,N,Y
+open_auction_amount_log,当日开盘集合竞价成交额,log1p(open_auction_amount),当日开盘集合竞价,N,N,N,Y
+prev_close_auction_ret,前日收盘集合竞价收益,prev_close_auction_close / prev_close_use - 1,t-1 收盘集合竞价,N,N,前日收盘,Y
+prev_close_auction_amount_log,前日收盘集合竞价成交额,log1p(prev_close_auction_amount),t-1 收盘集合竞价,N,N,前日收盘,Y
+prev_net_mf_amount_ratio,前日主力净流入强度,prev_net_mf_amount / amount20_prev,t-1 资金流 + 历史成交额,N,N,前日 full day,Y
+prev_elg_net_amount_ratio,前日超大单净流入强度,(buy_elg_amount-sell_elg_amount) / amount20_prev,t-1 资金流 + 历史成交额,N,N,前日 full day,Y
+prev_ths_net_amount_ratio,前日同花顺资金净流入强度,prev_ths_net_amount / amount20_prev,t-1 资金流 + 历史成交额,N,N,前日 full day,Y
+market_ret_median_1450,当日市场 14:50 截面中位收益,median(ret_to_prev_close_1450 over candidates),当日全候选 <=14:50,N,N,N,"Y, 需全市场实时分钟数据"
+market_breadth_positive,当日市场 14:50 上涨比例,mean(ret_to_prev_close_1450>0 over candidates),当日全候选 <=14:50,N,N,N,"Y, 需全市场实时分钟数据"
+market_tail_ret_median,当日市场尾盘动量中位数,median(tail_ret_1420_1450 over candidates),当日全候选 <=14:50,N,N,N,"Y, 需全市场实时分钟数据"
+market_tail_breadth_positive,当日市场尾盘上涨比例,mean(tail_ret_1420_1450>0 over candidates),当日全候选 <=14:50,N,N,N,"Y, 需全市场实时分钟数据"
+market_amount_log,候选池截至 14:50 总成交额,log1p(sum(exp(amount_sofar_log)-1)),当日全候选 <=14:50,N,N,不是全天 amount,"Y, 需全市场实时分钟数据"
