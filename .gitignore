@@ -14,6 +14,7 @@
 !research/v8_research/README.md
 !research/v8_research/evaluate_strategy.py
 !research/v8_research/batch1_hard_checks.py
+!research/v8_research/batch2A1_UF_single_factor.py
 !reports/
 !reports/tushare/
 !reports/tushare/v8_research/
@@ -51,3 +52,14 @@
 !reports/tushare/v8_research/batch1_hard_checks/batch1_universe_overlap.csv
 !reports/tushare/v8_research/batch1_hard_checks/batch1_universe_signal_retention.csv
 !reports/tushare/v8_research/batch1_hard_checks/batch1_zero_fill_events.csv
+!reports/tushare/v8_research/batch2A1_UF_single_factor/
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_U_reselection_summary.csv
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_U_fill_quality.csv
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_U_concentration_summary.csv
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_U_limitations.md
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_F_filter_summary.csv
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_F_fill_quality.csv
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_F_capacity_filter_events.csv
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_F_limitations.md
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_conclusion.md
+!reports/tushare/v8_research/batch2A1_UF_single_factor/batch2A1_file_sha256.csv
