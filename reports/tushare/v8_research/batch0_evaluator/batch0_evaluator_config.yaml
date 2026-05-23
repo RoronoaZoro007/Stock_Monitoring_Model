@@ -1,0 +1,47 @@
+# Batch 0 evaluator config. This file is documentation for the executed run.
+created_at_beijing: 2026-05-23T21:00:57+08:00
+batch: v8_research_batch0_evaluator
+source_model_version: v7_cap20_strong_label_003
+validation_period: 20260224-20260520
+signal_file: locked_artifacts/v7_cap20_strong_label_003/validation/top10_validation.csv
+score_file: locked_artifacts/v7_cap20_strong_label_003/validation/validation_predictions.csv.gz
+candidate_pool_file: locked_artifacts/v7_cap20_strong_label_003/validation/validation_predictions.csv.gz
+daily_file: data_tushare/clean/daily_repaired_top3000.parquet
+minute_dir: data_tushare/raw/stk_mins/freq=5min
+top_n: 10
+score_column: score
+label_column: label_static_003
+return_column: target_return
+locked_return_assumption: target_return already includes commission, stamp tax and 5bp one-way slippage.
+train_model: false
+change_features: false
+change_label: false
+change_topn: false
+change_exit_rule: false
+cost_cases:
+  - no_cost
+  - basic_cost_no_slippage
+  - 5bp_one_way_slippage
+  - 10bp_one_way_slippage
+  - 15bp_one_way_slippage
+  - 20bp_one_way_slippage
+  - 10bp_one_way_slippage_plus_impact_cost
+  - 10bp_one_way_slippage_plus_impact_cost_plus_participation_cap
+  - 10bp_one_way_slippage_plus_impact_cost_plus_participation_cap_plus_partial_zero_fill
+capital_levels:
+  - 100000
+  - 300000
+  - 500000
+  - 1000000
+  - 5000000
+participation_caps:
+  - 0.01
+  - 0.03
+  - 0.05
+  - 0.1
+enable_partial_fill: true
+enable_zero_fill: true
+enable_limit_suspend_rules: true
+impact_formula: per-side impact = min(50bp, 15bp * sqrt(realized_participation))
+random_baseline_runs: 1000
+random_seed: 20260523

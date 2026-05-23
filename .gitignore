@@ -5,3 +5,26 @@
 !lock_v7_artifacts.py
 !locked_artifacts/
 !locked_artifacts/**
+
+# v8 Batch 0 research branch: track only lightweight evaluator code and
+# auditable summaries. Raw data, model frames, large validation details and
+# zip backups remain ignored by the leading "*" rule.
+!research/
+!research/v8_research/
+!research/v8_research/README.md
+!research/v8_research/evaluate_strategy.py
+!reports/
+!reports/tushare/
+!reports/tushare/v8_research/
+!reports/tushare/v8_research/batch0_evaluator/
+!reports/tushare/v8_research/batch0_evaluator/batch0_v7_reproduction_summary.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_cost_sensitivity_summary.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_capacity_matrix_template.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_fill_quality.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_drawdown_summary.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_concentration_summary.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_random_baseline_summary.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_simple_benchmark_summary.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_evaluator_config.yaml
+!reports/tushare/v8_research/batch0_evaluator/batch0_file_sha256.csv
+!reports/tushare/v8_research/batch0_evaluator/batch0_conclusion.md
