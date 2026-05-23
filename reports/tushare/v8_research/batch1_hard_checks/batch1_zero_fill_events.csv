@@ -1,0 +1,1 @@
+trade_id,trade_date,ts_code,score,target_return,gross_return_v7,effective_gross_return,scenario_id,cost_case,capital,participation_cap,slippage_bp,include_impact,partial_fill,zero_fill,fill_ratio,buy_participation,sell_participation,buy_impact_bp,sell_impact_bp,filled_notional_return,portfolio_slot_return,unfilled_reason

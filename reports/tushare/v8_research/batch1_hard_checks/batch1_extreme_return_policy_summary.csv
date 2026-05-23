@@ -1,0 +1,4 @@
+policy_id,policy_name,sample_rows,removed_vs_C0,extreme_abs_gt20,positive_extreme,negative_extreme,train_extreme,legacy_validation_extreme
+C0_full_no_cap,No event removal and no cap20 removal,1324814,0,391,104,287,341,50
+C1_event_clean_only,Only confirmed dirty event removed,1324813,1,390,104,286,341,49
+C2_cap20,Confirmed dirty event removed and abs(target_return)>20% removed,1324423,391,0,0,0,0,0

@@ -1,0 +1,13 @@
+split,extreme_side,primary_attribution,rows
+legacy_validation,negative,special_20pct_limit_board,25
+legacy_validation,negative,unknown,15
+legacy_validation,negative,confirmed_dirty_event_clean_removed,1
+legacy_validation,positive,special_20pct_limit_board,9
+train,negative,special_20pct_limit_board,162
+train,negative,unknown,73
+train,negative,subnew_stock_365d,8
+train,negative,new_stock_180d,2
+train,negative,suspension_or_resume_gap_gt7_calendar_days,1
+train,positive,special_20pct_limit_board,92
+train,positive,subnew_stock_365d,2
+train,positive,new_stock_180d,1
