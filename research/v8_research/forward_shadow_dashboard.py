@@ -643,15 +643,17 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
   <style>
     :root {{
       color-scheme: light;
-      --bg: #f5f7fb;
+      --bg: #f3f5f8;
       --panel: #ffffff;
-      --line: #d8dee9;
-      --text: #202733;
+      --line: #d9dee7;
+      --text: #1f2937;
       --muted: #667085;
-      --accent: #1769aa;
+      --soft: #f8fafc;
+      --accent: #175cd3;
       --bad: #b42318;
       --ok: #067647;
       --warn: #b54708;
+      --shadow: 0 1px 2px rgba(16, 24, 40, .06);
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -661,20 +663,32 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       background: var(--bg);
     }}
     header {{
-      padding: 18px 24px;
+      padding: 18px 28px;
       border-bottom: 1px solid var(--line);
       background: var(--panel);
     }}
-    h1 {{ margin: 0; font-size: 20px; }}
-    main {{ padding: 20px 24px 32px; max-width: 1440px; margin: 0 auto; }}
+    h1 {{ margin: 0; font-size: 20px; letter-spacing: 0; }}
+    h2 {{ font-size: 16px; margin: 0 0 10px; }}
+    h3 {{ font-size: 14px; margin: 0 0 8px; }}
+    main {{ padding: 18px 24px 32px; max-width: 1480px; margin: 0 auto; }}
     section {{
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 16px;
       margin-bottom: 16px;
+      box-shadow: var(--shadow);
     }}
+    .control-head {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }}
+    .control-title {{ display: flex; flex-direction: column; gap: 3px; }}
     .grid {{ display: grid; grid-template-columns: repeat(4, minmax(170px, 1fr)); gap: 12px; align-items: end; }}
+    .compact-grid {{ display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 12px; align-items: end; }}
     label {{ display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; }}
     input, select {{
       width: 100%;
@@ -701,6 +715,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     button.danger {{ background: var(--bad); }}
     button:disabled {{ opacity: .5; cursor: not-allowed; }}
     .bar {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }}
+    .stack {{ display: flex; flex-direction: column; gap: 12px; }}
     .pill {{
       display: inline-flex;
       align-items: center;
@@ -714,13 +729,37 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .pill.ok {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .pill.bad {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
     .pill.warn {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
-    .metrics {{ display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 10px; }}
-    .metric {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #fcfcfd; }}
+    .metrics {{ display: grid; grid-template-columns: 1.2fr 1.8fr repeat(4, minmax(110px, 1fr)); gap: 10px; }}
+    .metric {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #fcfcfd; min-height: 70px; }}
     .metric span {{ display: block; color: var(--muted); font-size: 12px; }}
-    .metric strong {{ font-size: 18px; }}
-    table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }}
+    .metric strong {{ display: block; font-size: 17px; line-height: 1.3; margin-top: 4px; word-break: break-word; }}
+    .hero {{
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) 1.2fr 1.2fr;
+      gap: 14px;
+    }}
+    .action-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
+    }}
+    .action-card header {{
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--soft);
+    }}
+    .action-card .body {{ padding: 12px 14px; }}
+    .action-card h2 {{ margin: 0; }}
+    .action-meta {{ color: var(--muted); font-size: 12px; margin-top: 4px; }}
+    .value-big {{ font-size: 24px; font-weight: 700; line-height: 1.2; }}
+    .table-wrap {{ overflow-x: auto; }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }}
     th, td {{ border-bottom: 1px solid var(--line); padding: 8px 7px; text-align: left; vertical-align: top; }}
     th {{ color: var(--muted); font-weight: 600; background: #f8fafc; }}
+    td.num, th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+    .line-tags {{ display: flex; flex-wrap: wrap; gap: 4px; }}
+    .line-tag {{ display: inline-flex; padding: 2px 6px; border-radius: 999px; background: #eef4ff; color: #194185; border: 1px solid #c7d7fe; font-size: 12px; }}
     pre {{
       white-space: pre-wrap;
       overflow: auto;
@@ -733,8 +772,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }}
     .muted {{ color: var(--muted); }}
     .two {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+    .three {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }}
     .notice {{ padding: 10px 12px; border: 1px solid #fedf89; background: #fffaeb; color: #93370d; border-radius: 6px; }}
-    h2 {{ font-size: 16px; margin: 0 0 8px; }}
     .secret-row {{ grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 220px; gap: 12px; align-items: end; }}
     .error-panel {{
       display: none;
@@ -743,79 +782,54 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }}
     .error-panel h2 {{ color: var(--bad); }}
     .error-panel pre {{ background: #7a271a; color: #fff1f0; }}
+    details {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fcfcfd;
+      padding: 10px 12px;
+      margin-top: 12px;
+    }}
+    summary {{ cursor: pointer; font-weight: 600; }}
+    .tabs {{ display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }}
+    .tab-btn {{
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 0;
+      min-width: 0;
+      padding: 10px 4px;
+      border-bottom: 2px solid transparent;
+    }}
+    .tab-btn.active {{ color: var(--accent); border-bottom-color: var(--accent); }}
+    .tab-panel {{ display: none; }}
+    .tab-panel.active {{ display: block; }}
+    .empty {{
+      padding: 14px;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      border-radius: 6px;
+      background: #fcfcfd;
+    }}
+    .status-line {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
+    .nowrap {{ white-space: nowrap; }}
     @media (max-width: 920px) {{
-      .grid, .metrics, .two, .secret-row {{ grid-template-columns: 1fr; }}
+      .grid, .compact-grid, .metrics, .hero, .two, .three, .secret-row {{ grid-template-columns: 1fr; }}
+      main {{ padding: 14px; }}
+      .control-head {{ flex-direction: column; }}
     }}
   </style>
 </head>
 <body>
   <header>
     <h1>Forward Shadow Paper Tracking 控制台</h1>
-    <div class="muted">本地 paper-only 页面：启动任务、查看进度和输出文件；不下单，不重训，不改 v7_locked。</div>
+    <div class="muted">本地 paper-only 页面：只做前向纸面跟踪；不下单，不重训，不改 v7_locked。</div>
   </header>
   <main>
     <section>
-      <div class="grid">
-        <div>
-          <label for="tradeDate">执行日期</label>
-          <input id="tradeDate" type="date" min="{min_date}" value="{default_date}">
-        </div>
-        <div>
-          <label for="mode">执行模式</label>
-          <select id="mode">
-            <option value="live_time" selected>模式2：真实时间点模式</option>
-            <option value="fast_replay">模式1：模拟时间点快跑</option>
-          </select>
-        </div>
-        <div>
-          <label for="rpm">请求速率 / 分钟</label>
-          <input id="rpm" type="number" min="1" max="500" value="120">
-        </div>
-        <div>
-          <label for="batchSize">批量股票数</label>
-          <input id="batchSize" type="number" min="1" max="800" value="160">
-        </div>
-        <div>
-          <label for="outputRoot">输出目录</label>
-          <input id="outputRoot" value="{html.escape(rel(default_output_root))}">
-        </div>
-        <div>
-          <label for="runId">run_id（可选）</label>
-          <input id="runId" placeholder="留空自动生成">
-        </div>
-        <div>
-          <label for="topicId">WxPusher Topic / GroupId</label>
-          <input id="topicId" type="number" value="{topic_id}">
-        </div>
-        <div>
-          <label for="notificationPolicy">消息推送策略</label>
-          <select id="notificationPolicy">
-            <option value="key_events" selected>关键交易 + 失败</option>
-            <option value="trade_only">买卖提示 + 错误</option>
-            <option value="failures_only">只推失败</option>
-            <option value="all_steps">所有节点</option>
-            <option value="none">不推送</option>
-          </select>
-        </div>
-        <div class="secret-row">
-          <div>
-            <label for="tushareToken">TUSHARE_TOKEN（可选，留空使用环境变量）</label>
-            <input id="tushareToken" type="password" autocomplete="new-password" placeholder="只用于本次启动，不落盘">
-          </div>
-          <div>
-            <label for="wxpusherToken">WXPUSHER_APP_TOKEN（可选，留空使用环境变量）</label>
-            <input id="wxpusherToken" type="password" autocomplete="new-password" placeholder="只用于本次启动，不落盘">
-          </div>
-          <div class="checks">
-            <label><input id="showTokens" type="checkbox"> 显示输入</label>
-          </div>
-        </div>
-        <div class="checks">
-          <label><input id="sendNotifications" type="checkbox" checked> 推送 WxPusher</label>
-          <label><input id="skipMoneyflow" type="checkbox"> 跳过 moneyflow</label>
-          <label><input id="useRunIdOutputDir" type="checkbox"> run_id 输出目录</label>
-          <label><input id="preserveRunSnapshot" type="checkbox"> 保留本次 run 快照</label>
-          <label><input id="forceRefreshMinutes" type="checkbox"> 强制重新下载分钟线</label>
+      <div class="control-head">
+        <div class="control-title">
+          <h2>任务启动</h2>
+          <div class="muted">默认真实时间点运行；历史补跑可切换为模拟时间点快跑。token 只注入本次子进程，不落盘。</div>
         </div>
         <div class="bar">
           <button id="startBtn">启动</button>
@@ -823,18 +837,88 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           <button id="refreshBtn" class="secondary">刷新页面数据</button>
         </div>
       </div>
-      <p class="muted">模式1仍走真实接口和真实数据处理，只是不等待 09:25/14:50 等墙上时间；模式2按北京时间等待，已过节点会立即补执行。run_id 输出目录会写入 `输出目录/runs/run_id`；快照会复制轻量结果到 `输出目录/run_snapshots/run_id`；强制重新下载分钟线会重新请求分钟 bar 并按时间键覆盖去重。页面输入的 token 只注入本次子进程环境，不写入文件、不回显。</p>
+      <div class="compact-grid">
+        <div>
+          <label for="tradeDate">执行日期</label>
+          <input id="tradeDate" type="date" min="{min_date}" value="{default_date}">
+        </div>
+        <div>
+          <label for="mode">执行模式</label>
+          <select id="mode">
+            <option value="live_time" selected>真实时间点模式</option>
+            <option value="fast_replay">模拟时间点快跑</option>
+          </select>
+        </div>
+        <div>
+          <label for="notificationPolicy">消息推送策略</label>
+          <select id="notificationPolicy">
+            <option value="key_events" selected>关键交易 + 失败</option>
+            <option value="trade_only">只推买卖提示 + 错误</option>
+            <option value="failures_only">只推失败</option>
+            <option value="all_steps">所有节点</option>
+            <option value="none">不推送</option>
+          </select>
+        </div>
+      </div>
+      <details>
+        <summary>高级设置</summary>
+        <div class="grid" style="margin-top:12px">
+          <div>
+            <label for="rpm">请求速率 / 分钟</label>
+            <input id="rpm" type="number" min="1" max="500" value="120">
+          </div>
+          <div>
+            <label for="batchSize">批量股票数</label>
+            <input id="batchSize" type="number" min="1" max="800" value="160">
+          </div>
+          <div>
+            <label for="outputRoot">输出目录</label>
+            <input id="outputRoot" value="{html.escape(rel(default_output_root))}">
+          </div>
+          <div>
+            <label for="runId">run_id（可选）</label>
+            <input id="runId" placeholder="留空自动生成">
+          </div>
+          <div>
+            <label for="topicId">WxPusher Topic / GroupId</label>
+            <input id="topicId" type="number" value="{topic_id}">
+          </div>
+          <div class="checks">
+            <label><input id="sendNotifications" type="checkbox" checked> 推送 WxPusher</label>
+            <label><input id="skipMoneyflow" type="checkbox"> 跳过 moneyflow</label>
+          </div>
+          <div class="secret-row">
+            <div>
+              <label for="tushareToken">TUSHARE_TOKEN（可选，留空使用环境变量）</label>
+              <input id="tushareToken" type="password" autocomplete="new-password" placeholder="只用于本次启动，不落盘">
+            </div>
+            <div>
+              <label for="wxpusherToken">WXPUSHER_APP_TOKEN（可选，留空使用环境变量）</label>
+              <input id="wxpusherToken" type="password" autocomplete="new-password" placeholder="只用于本次启动，不落盘">
+            </div>
+            <div class="checks">
+              <label><input id="showTokens" type="checkbox"> 显示输入</label>
+            </div>
+          </div>
+          <div class="checks" style="grid-column:1/-1">
+            <label><input id="useRunIdOutputDir" type="checkbox"> run_id 输出目录</label>
+            <label><input id="preserveRunSnapshot" type="checkbox"> 保留本次 run 快照</label>
+            <label><input id="forceRefreshMinutes" type="checkbox"> 强制重新下载分钟线</label>
+          </div>
+        </div>
+        <p class="muted">模拟时间点快跑仍走真实接口和真实数据处理，只是不等待墙上时间。run_id 输出目录写入 `输出目录/runs/run_id`；快照复制轻量结果到 `输出目录/run_snapshots/run_id`；强制重新下载分钟线会重新请求分钟 bar 并按时间键覆盖去重。</p>
+      </details>
       <div id="message" class="muted"></div>
     </section>
 
-    <section>
-      <div class="bar">
+    <section class="stack">
+      <div class="status-line">
         <span id="jobStatus" class="pill">未启动</span>
         <span id="modePill" class="pill">mode: -</span>
         <span id="datePill" class="pill">date: -</span>
         <span id="pidPill" class="pill">pid: -</span>
       </div>
-      <div class="metrics" style="margin-top:12px">
+      <div class="metrics">
         <div class="metric"><span>当前节点</span><strong id="currentStep">-</strong></div>
         <div class="metric"><span>正在做什么</span><strong id="currentStepMeaning">-</strong></div>
         <div class="metric"><span>节点状态</span><strong id="runnerState">-</strong></div>
@@ -851,61 +935,99 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     </section>
 
     <section>
-      <h2>T-1 纸面持仓与今日卖出</h2>
-      <div id="priorNotice" class="notice"></div>
-      <div class="two" style="margin-top:12px">
-        <div>
-          <h2>前一交易日纸面买入</h2>
-          <div id="priorEntriesTable"></div>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="overview">今日看板</button>
+        <button class="tab-btn" data-tab="details">买卖明细</button>
+        <button class="tab-btn" data-tab="ops">运行日志</button>
+      </div>
+
+      <div id="tab-overview" class="tab-panel active">
+        <div class="hero">
+          <div class="action-card">
+            <header>
+              <h2>今日状态</h2>
+              <div class="action-meta" id="overviewDate">-</div>
+            </header>
+            <div class="body">
+              <div class="value-big" id="overviewHeadline">-</div>
+              <div class="muted" id="overviewSubline" style="margin-top:8px">-</div>
+            </div>
+          </div>
+          <div class="action-card">
+            <header>
+              <h2>今日卖出提示</h2>
+              <div class="action-meta" id="sellActionMeta">-</div>
+            </header>
+            <div class="body">
+              <div id="sellActionTable"></div>
+            </div>
+          </div>
+          <div class="action-card">
+            <header>
+              <h2>今日尾盘买入</h2>
+              <div class="action-meta" id="buyActionMeta">-</div>
+            </header>
+            <div class="body">
+              <div id="buyActionTable"></div>
+            </div>
+          </div>
         </div>
-        <div>
-          <h2>今日卖出提示</h2>
-          <div id="sellRecommendationsTable"></div>
+        <div class="two" style="margin-top:16px">
+          <div>
+            <h2>四线路状态</h2>
+            <div id="candidateTable"></div>
+          </div>
+          <div>
+            <h2>信号与入场统计</h2>
+            <div id="signalSummary"></div>
+            <div id="entryCounts" style="margin-top:10px"></div>
+          </div>
         </div>
       </div>
-      <div class="two" style="margin-top:12px">
-        <div>
-          <h2>今日退出记录</h2>
-          <div id="sellExecutionTable"></div>
+
+      <div id="tab-details" class="tab-panel">
+        <h2>T-1 纸面持仓与今日卖出</h2>
+        <div id="priorNotice" class="notice"></div>
+        <div class="two" style="margin-top:12px">
+          <div>
+            <h2>前一交易日纸面买入</h2>
+            <div id="priorEntriesTable"></div>
+          </div>
+          <div>
+            <h2>今日卖出提示</h2>
+            <div id="sellRecommendationsTable"></div>
+          </div>
         </div>
-        <div>
-          <h2>线路结算摘要</h2>
-          <div id="settlementSummaryTable"></div>
+        <div class="two" style="margin-top:12px">
+          <div>
+            <h2>今日退出记录</h2>
+            <div id="sellExecutionTable"></div>
+          </div>
+          <div>
+            <h2>线路结算摘要</h2>
+            <div id="settlementSummaryTable"></div>
+          </div>
         </div>
+
+        <h2 style="margin-top:16px">今日尾盘选股与买入价</h2>
+        <div id="todayBuyNotice" class="muted"></div>
+        <div id="todayBuyTable"></div>
       </div>
-    </section>
 
-    <section>
-      <h2>今日尾盘选股与买入价</h2>
-      <div id="todayBuyNotice" class="muted"></div>
-      <div id="todayBuyTable"></div>
-    </section>
-
-    <section class="two">
-      <div>
-        <h2>四线路状态</h2>
-        <div id="candidateTable"></div>
+      <div id="tab-ops" class="tab-panel">
+        <div class="two">
+          <div>
+            <h2>步骤进度</h2>
+            <div id="stepsTable"></div>
+          </div>
+          <div>
+            <h2>输出文件</h2>
+            <div id="filesTable"></div>
+          </div>
+        </div>
+        <h2 style="margin-top:16px">运行日志</h2>
+        <pre id="logTail"></pre>
       </div>
-      <div>
-        <h2>信号与入场统计</h2>
-        <div id="signalSummary"></div>
-        <div id="entryCounts" style="margin-top:10px"></div>
-      </div>
-    </section>
-
-    <section>
-      <h2>步骤进度</h2>
-      <div id="stepsTable"></div>
-    </section>
-
-    <section>
-      <h2>输出文件</h2>
-      <div id="filesTable"></div>
-    </section>
-
-    <section>
-      <h2>运行日志</h2>
-      <pre id="logTail"></pre>
     </section>
   </main>
   <script>
@@ -919,11 +1041,117 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     function esc(v) {{
       return String(v ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
     }}
+    function asNumber(v) {{
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }}
+    function fmtPrice(v) {{
+      const n = asNumber(v);
+      return n === null ? '-' : n.toFixed(2);
+    }}
+    function fmtScore(v) {{
+      const n = asNumber(v);
+      return n === null ? '-' : n.toFixed(4);
+    }}
+    function fmtPct(v) {{
+      const n = asNumber(v);
+      return n === null ? '-' : (n * 100).toFixed(2) + '%';
+    }}
+    function fmtWeight(v) {{
+      const n = asNumber(v);
+      return n === null ? '-' : (n * 100).toFixed(1) + '%';
+    }}
+    function fmtNumber(v, digits=0) {{
+      const n = asNumber(v);
+      return n === null ? '-' : n.toFixed(digits);
+    }}
+    function isTrue(v) {{
+      return String(v ?? '').toLowerCase() === 'true' || String(v ?? '') === '1';
+    }}
+    function formatCell(value, key, col) {{
+      const type = col.type || '';
+      const lower = String(key || '').toLowerCase();
+      if (type === 'lines') return renderLineTags(value || []);
+      if (type === 'price' || lower.includes('vwap') || lower.includes('price')) return fmtPrice(value);
+      if (type === 'pct' || lower.includes('return')) return fmtPct(value);
+      if (type === 'score' || lower.includes('score')) return fmtScore(value);
+      if (type === 'weight' || lower === 'weight') return fmtWeight(value);
+      if (type === 'seconds') return fmtNumber(value, 1);
+      if (type === 'number') return fmtNumber(value, col.digits || 0);
+      return esc(value === undefined || value === null || value === '' ? '-' : value);
+    }}
+    function numericClass(col, key) {{
+      const type = col.type || '';
+      const lower = String(key || '').toLowerCase();
+      return ['price','pct','score','weight','seconds','number'].includes(type) || lower.includes('vwap') || lower.includes('return') || lower.includes('score') || lower.includes('price') ? 'num' : '';
+    }}
+    function renderLineTags(lines) {{
+      const arr = Array.isArray(lines) ? lines : String(lines || '').split(/[，,\\/]+/).filter(Boolean);
+      if (!arr.length) return '-';
+      return '<div class="line-tags">' + arr.map(x => '<span class="line-tag">' + esc(x) + '</span>').join('') + '</div>';
+    }}
     function table(rows, cols) {{
-      if (!rows || !rows.length) return '<div class="muted">暂无数据</div>';
-      return '<table><thead><tr>' + cols.map(c => '<th>'+esc(c.label || c)+'</th>').join('') + '</tr></thead><tbody>' +
-        rows.map(r => '<tr>' + cols.map(c => '<td>'+esc(r[c.key || c])+'</td>').join('') + '</tr>').join('') +
-        '</tbody></table>';
+      if (!rows || !rows.length) return '<div class="empty">暂无数据</div>';
+      const head = cols.map(c => {{
+        const key = c.key || c;
+        const cls = numericClass(c, key);
+        return '<th class="' + cls + '">' + esc(c.label || c) + '</th>';
+      }}).join('');
+      const body = rows.map(r => '<tr>' + cols.map(c => {{
+        const key = c.key || c;
+        const cls = numericClass(c, key);
+        return '<td class="' + cls + '">' + formatCell(r[key], key, c) + '</td>';
+      }}).join('') + '</tr>').join('');
+      return '<div class="table-wrap"><table><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+    }}
+    function compactBuyRows(rows) {{
+      const map = new Map();
+      for (const r of rows || []) {{
+        const key = (r.code || '') + '|' + (r.expected_entry_time || '') + '|' + (r.entry_vwap || '');
+        if (!map.has(key)) {{
+          map.set(key, {{
+            lines: [],
+            code: r.code || '',
+            name: r.name || '',
+            rank: r.rank || '',
+            score: r.score || '',
+            expected_entry_time: r.expected_entry_time || '14:55',
+            entry_vwap: r.entry_vwap || '',
+            weight: r.weight || '',
+            entry_status: r.entry_status || ''
+          }});
+        }}
+        const item = map.get(key);
+        if (r.line && !item.lines.includes(r.line)) item.lines.push(r.line);
+        const oldScore = asNumber(item.score);
+        const newScore = asNumber(r.score);
+        if (newScore !== null && (oldScore === null || newScore > oldScore)) item.score = r.score;
+      }}
+      return Array.from(map.values());
+    }}
+    function compactSellRows(rows) {{
+      const map = new Map();
+      for (const r of rows || []) {{
+        const time = r.expected_exit_time || r.actual_exit_time || '';
+        const price = r.recommended_sell_price || r.exit_vwap || '';
+        const key = (r.code || '') + '|' + time + '|' + price + '|' + (r.exit_reason || '');
+        if (!map.has(key)) {{
+          map.set(key, {{
+            lines: [],
+            decision_time: r.decision_time || '',
+            exit_time: time,
+            code: r.code || '',
+            name: r.name || '',
+            sell_price: price,
+            exit_reason: r.exit_reason || '',
+            status: r.recommendation_status || r.paper_exit_status || ''
+          }});
+        }}
+        const item = map.get(key);
+        if (r.line && !item.lines.includes(r.line)) item.lines.push(r.line);
+      }}
+      return Array.from(map.values());
     }}
     function stepDescription(step) {{
       const map = {{
@@ -1003,11 +1231,14 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       const job = data.job;
       const artifacts = data.artifacts || {{}};
       const live = artifacts.live_status || {{}};
+      const prior = artifacts.prior_context || {{}};
+      const today = artifacts.today_context || {{}};
       const jobStatus = job ? job.status : 'idle';
+      const selectedDate = data.requested_trade_date || job?.meta?.trade_date || data.default_trade_date || '-';
       $('jobStatus').textContent = jobStatus;
       $('jobStatus').className = 'pill ' + (jobStatus === 'completed' ? 'ok' : (jobStatus === 'failed' ? 'bad' : (jobStatus === 'running' || jobStatus === 'stopping' ? 'warn' : '')));
       $('modePill').textContent = 'mode: ' + (job?.meta?.mode || '-');
-      $('datePill').textContent = 'date: ' + (data.requested_trade_date || job?.meta?.trade_date || data.default_trade_date || '-');
+      $('datePill').textContent = 'date: ' + selectedDate;
       $('pidPill').textContent = 'pid: ' + (job?.pid || '-');
       if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
       if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
@@ -1017,39 +1248,74 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('completedSteps').textContent = live.completed_steps ?? 0;
       $('totalSteps').textContent = live.total_steps ?? '-';
       $('updatedAt').textContent = live.updated_at_beijing || '-';
+
+      const sellRows = prior.sell_recommendations?.length ? prior.sell_recommendations : (prior.sell_execution || []);
+      const compactSell = compactSellRows(sellRows);
+      const compactBuy = compactBuyRows(today.buy_signals || []);
+      const sellCount = compactSell.length;
+      const buyCount = compactBuy.length;
+      $('overviewDate').textContent = '执行日期 ' + selectedDate;
+      $('overviewHeadline').textContent = jobStatus === 'running'
+        ? '运行中'
+        : (jobStatus === 'failed' ? '有错误' : (jobStatus === 'completed' ? '已完成' : '待启动 / 可查看历史'));
+      $('overviewSubline').textContent = '卖出提示 ' + sellCount + ' 条；尾盘买入候选 ' + buyCount + ' 条；当前节点：' + stepDescription(live.current_step_id || '');
+      $('sellActionMeta').textContent = prior.prior_signal_date
+        ? ('来自 T-1 信号 ' + prior.prior_signal_date + '，价格展示保留 2 位小数')
+        : '未找到 T-1 信号';
+      $('buyActionMeta').textContent = today.signals_generated
+        ? (today.entries_recorded ? '已记录 14:55 paper entry VWAP' : '已冻结候选，等待 14:55 VWAP')
+        : '今日尾盘信号尚未生成';
+      $('sellActionTable').innerHTML = table(compactSell, [
+        {{key:'lines', label:'线路', type:'lines'}},
+        {{key:'exit_time', label:'建议/实际卖出'}},
+        {{key:'code', label:'股票'}},
+        {{key:'name', label:'名称'}},
+        {{key:'sell_price', label:'推荐/执行价', type:'price'}},
+        {{key:'exit_reason', label:'原因'}},
+        {{key:'status', label:'状态'}}
+      ]);
+      $('buyActionTable').innerHTML = table(compactBuy, [
+        {{key:'lines', label:'线路', type:'lines'}},
+        {{key:'rank', label:'rank', type:'number'}},
+        {{key:'code', label:'股票'}},
+        {{key:'name', label:'名称'}},
+        {{key:'score', label:'score', type:'score'}},
+        {{key:'expected_entry_time', label:'建议买入'}},
+        {{key:'entry_vwap', label:'参考买价', type:'price'}},
+        {{key:'weight', label:'权重', type:'weight'}}
+      ]);
+
       $('candidateTable').innerHTML = table(artifacts.candidate_status || [], [
-        {{key:'strategy_id', label:'line_id'}}, {{key:'tail_down_flag', label:'tail_down'}}, {{key:'selected_count', label:'selected'}}, {{key:'no_trade_reason', label:'no_trade'}}
+        {{key:'strategy_id', label:'line_id'}}, {{key:'tail_down_flag', label:'tail_down'}}, {{key:'selected_count', label:'selected', type:'number'}}, {{key:'no_trade_reason', label:'no_trade'}}
       ]);
       $('signalSummary').innerHTML = table(artifacts.signal_summary || [], [
-        {{key:'strategy_id', label:'line_id'}}, {{key:'rows', label:'rows'}}, {{key:'selected', label:'selected'}}, {{key:'avg_score', label:'avg_score'}}
+        {{key:'strategy_id', label:'line_id'}}, {{key:'rows', label:'rows', type:'number'}}, {{key:'selected', label:'selected', type:'number'}}, {{key:'avg_score', label:'avg_score', type:'score'}}
       ]);
       const entryRows = Object.entries(artifacts.entry_counts || {{}}).map(([status, count]) => ({{status, count}}));
-      $('entryCounts').innerHTML = table(entryRows, ['status','count']);
-      const prior = artifacts.prior_context || {{}};
+      $('entryCounts').innerHTML = table(entryRows, [{{key:'status', label:'状态'}}, {{key:'count', label:'数量', type:'number'}}]);
       $('priorNotice').textContent = prior.prior_signal_date
         ? ('T-1 signal_date: ' + prior.prior_signal_date + (prior.message ? '；' + prior.message : ''))
         : (prior.message || '未找到前一交易日纸面选股信息。');
       $('priorEntriesTable').innerHTML = table(prior.entries || [], [
-        {{key:'line', label:'线路'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'original_v7_rank', label:'rank'}}, {{key:'entry_vwap', label:'买入VWAP'}}, {{key:'weight', label:'权重'}}, {{key:'paper_entry_status', label:'状态'}}
+        {{key:'line', label:'线路'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'original_v7_rank', label:'rank', type:'number'}}, {{key:'entry_vwap', label:'买入VWAP', type:'price'}}, {{key:'weight', label:'权重', type:'weight'}}, {{key:'paper_entry_status', label:'状态'}}
       ]);
       $('sellRecommendationsTable').innerHTML = table(prior.sell_recommendations || [], [
-        {{key:'line', label:'线路'}}, {{key:'decision_time', label:'判断'}}, {{key:'expected_exit_time', label:'建议卖出'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'recommended_sell_price', label:'推荐卖价'}}, {{key:'exit_reason', label:'原因'}}, {{key:'recommendation_status', label:'状态'}}
+        {{key:'line', label:'线路'}}, {{key:'decision_time', label:'判断'}}, {{key:'expected_exit_time', label:'建议卖出'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'recommended_sell_price', label:'推荐卖价', type:'price'}}, {{key:'exit_reason', label:'原因'}}, {{key:'recommendation_status', label:'状态'}}
       ]);
       $('sellExecutionTable').innerHTML = table(prior.sell_execution || [], [
-        {{key:'line', label:'线路'}}, {{key:'actual_exit_time', label:'卖出时间'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'entry_vwap', label:'买入'}}, {{key:'exit_vwap', label:'卖出'}}, {{key:'return_10bp_impact', label:'10bp+impact'}}, {{key:'paper_exit_status', label:'状态'}}
+        {{key:'line', label:'线路'}}, {{key:'actual_exit_time', label:'卖出时间'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'entry_vwap', label:'买入', type:'price'}}, {{key:'exit_vwap', label:'卖出', type:'price'}}, {{key:'return_10bp_impact', label:'10bp+impact', type:'pct'}}, {{key:'paper_exit_status', label:'状态'}}
       ]);
       $('settlementSummaryTable').innerHTML = table(prior.settlement_summary || [], [
-        {{key:'line', label:'线路'}}, {{key:'positions', label:'笔数'}}, {{key:'daily_return_5bp', label:'5bp日收益'}}, {{key:'daily_return_10bp_impact', label:'10bp+impact日收益'}}
+        {{key:'line', label:'线路'}}, {{key:'positions', label:'笔数', type:'number'}}, {{key:'daily_return_5bp', label:'5bp日收益', type:'pct'}}, {{key:'daily_return_10bp_impact', label:'10bp+impact日收益', type:'pct'}}
       ]);
-      const today = artifacts.today_context || {{}};
       $('todayBuyNotice').textContent = today.signals_generated
         ? (today.entries_recorded ? '今日已生成信号并记录 14:55 纸面买入价。' : '今日已冻结尾盘候选，14:55 买入价尚未记录。')
         : '今日尾盘选股信号尚未生成。';
       $('todayBuyTable').innerHTML = table(today.buy_signals || [], [
-        {{key:'line', label:'线路'}}, {{key:'rank', label:'rank'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'score', label:'score'}}, {{key:'expected_entry_time', label:'建议买入'}}, {{key:'entry_vwap', label:'买入VWAP'}}, {{key:'entry_status', label:'状态'}}, {{key:'weight', label:'权重'}}
+        {{key:'line', label:'线路'}}, {{key:'rank', label:'rank', type:'number'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'score', label:'score', type:'score'}}, {{key:'expected_entry_time', label:'建议买入'}}, {{key:'entry_vwap', label:'买入VWAP', type:'price'}}, {{key:'entry_status', label:'状态'}}, {{key:'weight', label:'权重', type:'weight'}}
       ]);
       $('stepsTable').innerHTML = table(artifacts.steps || [], [
-        {{key:'step_id', label:'step'}}, {{key:'scheduled_time', label:'scheduled'}}, {{key:'status', label:'status'}}, {{key:'duration_seconds', label:'seconds'}}, {{key:'return_code', label:'rc'}}
+        {{key:'step_id', label:'step'}}, {{key:'scheduled_time', label:'scheduled'}}, {{key:'status', label:'status'}}, {{key:'duration_seconds', label:'seconds', type:'seconds'}}, {{key:'return_code', label:'rc', type:'number'}}
       ]);
       const files = Object.entries(artifacts.files || {{}}).map(([name, path]) => ({{name, path, exists: artifacts.file_exists?.[name] ? 'yes' : 'no'}}));
       $('filesTable').innerHTML = table(files, ['name','exists','path']);
@@ -1073,6 +1339,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       }}
     }}
     $('startBtn').addEventListener('click', startJob);
+    document.querySelectorAll('.tab-btn').forEach(btn => {{
+      btn.addEventListener('click', () => {{
+        const tab = btn.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(x => x.classList.toggle('active', x === btn));
+        document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.id === 'tab-' + tab));
+      }});
+    }});
     $('showTokens').addEventListener('change', () => {{
       const typ = $('showTokens').checked ? 'text' : 'password';
       $('tushareToken').type = typ;
