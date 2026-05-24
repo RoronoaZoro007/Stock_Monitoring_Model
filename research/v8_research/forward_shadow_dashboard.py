@@ -106,15 +106,16 @@ def git_value(args: list[str]) -> str:
         return ""
 
 
-def env_health(send_notifications: bool) -> dict[str, Any]:
+def env_health(send_notifications: bool, env: dict[str, str] | None = None) -> dict[str, Any]:
+    env_map = env or os.environ
     missing = []
-    if not os.environ.get("TUSHARE_TOKEN", "").strip():
+    if not env_map.get("TUSHARE_TOKEN", "").strip():
         missing.append("TUSHARE_TOKEN")
-    if send_notifications and not os.environ.get("WXPUSHER_APP_TOKEN", "").strip():
+    if send_notifications and not env_map.get("WXPUSHER_APP_TOKEN", "").strip():
         missing.append("WXPUSHER_APP_TOKEN")
     return {
-        "tushare_token_present": bool(os.environ.get("TUSHARE_TOKEN", "").strip()),
-        "wxpusher_token_present": bool(os.environ.get("WXPUSHER_APP_TOKEN", "").strip()),
+        "tushare_token_present": bool(env_map.get("TUSHARE_TOKEN", "").strip()),
+        "wxpusher_token_present": bool(env_map.get("WXPUSHER_APP_TOKEN", "").strip()),
         "missing_required": missing,
     }
 
@@ -153,12 +154,21 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     requests_per_minute = int(payload.get("requests_per_minute") or 120)
     batch_size = int(payload.get("batch_size") or 160)
     lookback_days = int(payload.get("lookback_trading_days") or 90)
-    topic_id = int(payload.get("topic_id") or default_topic_id)
+    topic_id = int(payload.get("topic_id") or payload.get("group_id") or default_topic_id)
     skip_moneyflow = bool(payload.get("skip_moneyflow", False))
 
-    health = env_health(send_notifications)
+    env = os.environ.copy()
+    env.setdefault("TUSHARE_PROXY_URL", "http://tsy.xiaodefa.cn")
+    page_tushare_token = str(payload.get("tushare_token") or "").strip()
+    page_wxpusher_token = str(payload.get("wxpusher_app_token") or "").strip()
+    if page_tushare_token:
+        env["TUSHARE_TOKEN"] = page_tushare_token
+    if page_wxpusher_token:
+        env["WXPUSHER_APP_TOKEN"] = page_wxpusher_token
+
+    health = env_health(send_notifications, env)
     if health["missing_required"]:
-        raise ValueError("missing environment variables: " + ", ".join(health["missing_required"]))
+        raise ValueError("missing credentials: " + ", ".join(health["missing_required"]) + ". Set env vars or enter them on the page.")
 
     cmd = [
         sys.executable,
@@ -183,9 +193,6 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     if skip_moneyflow:
         cmd.append("--skip-moneyflow")
 
-    env = os.environ.copy()
-    env.setdefault("TUSHARE_PROXY_URL", "http://tsy.xiaodefa.cn")
-
     warnings = []
     if mode == "live_time" and trade_date != today_ymd():
         warnings.append("真实时间模式建议使用当天北京时间交易日；历史日期会按当前时钟执行已过节点。")
@@ -199,6 +206,10 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         "lookback_trading_days": lookback_days,
         "topic_id": topic_id,
         "skip_moneyflow": skip_moneyflow,
+        "credential_source": {
+            "tushare_token": "page_input" if page_tushare_token else "environment",
+            "wxpusher_app_token": "page_input" if page_wxpusher_token else "environment",
+        },
         "warnings": warnings,
     }
     return cmd, env, meta
@@ -221,6 +232,9 @@ def consume_process(job: dict[str, Any], state: DashboardState) -> None:
         with state.lock:
             if return_code != 0:
                 status = "stopped" if job.get("status") == "stopping" else "failed"
+                if status == "failed":
+                    job["error"] = f"runner exited with code {return_code}"
+                    job["last_error_lines"] = list(job.get("log_tail") or [])[-30:]
             job["status"] = status
             job["return_code"] = return_code
             job["finished_at_beijing"] = bj_now().isoformat(timespec="seconds")
@@ -228,6 +242,7 @@ def consume_process(job: dict[str, Any], state: DashboardState) -> None:
         with state.lock:
             job["status"] = "failed"
             job["error"] = repr(exc)
+            job["last_error_lines"] = list(job.get("log_tail") or [])[-30:]
             job["finished_at_beijing"] = bj_now().isoformat(timespec="seconds")
 
 
@@ -382,6 +397,7 @@ def public_job(job: dict[str, Any] | None) -> dict[str, Any] | None:
         "log_tail": list(job.get("log_tail") or [])[-120:],
         "command": job.get("safe_command"),
         "error": job.get("error"),
+        "last_error_lines": list(job.get("last_error_lines") or []),
     }
 
 
@@ -487,8 +503,16 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }}
     .muted {{ color: var(--muted); }}
     .two {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+    .secret-row {{ grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 220px; gap: 12px; align-items: end; }}
+    .error-panel {{
+      display: none;
+      border-color: #fecdca;
+      background: #fff6f5;
+    }}
+    .error-panel h2 {{ color: var(--bad); }}
+    .error-panel pre {{ background: #7a271a; color: #fff1f0; }}
     @media (max-width: 920px) {{
-      .grid, .metrics, .two {{ grid-template-columns: 1fr; }}
+      .grid, .metrics, .two, .secret-row {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -524,8 +548,21 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           <input id="outputRoot" value="{html.escape(rel(default_output_root))}">
         </div>
         <div>
-          <label for="topicId">WxPusher topic</label>
+          <label for="topicId">WxPusher Topic / GroupId</label>
           <input id="topicId" type="number" value="{topic_id}">
+        </div>
+        <div class="secret-row">
+          <div>
+            <label for="tushareToken">TUSHARE_TOKEN（可选，留空使用环境变量）</label>
+            <input id="tushareToken" type="password" autocomplete="new-password" placeholder="只用于本次启动，不落盘">
+          </div>
+          <div>
+            <label for="wxpusherToken">WXPUSHER_APP_TOKEN（可选，留空使用环境变量）</label>
+            <input id="wxpusherToken" type="password" autocomplete="new-password" placeholder="只用于本次启动，不落盘">
+          </div>
+          <div class="checks">
+            <label><input id="showTokens" type="checkbox"> 显示输入</label>
+          </div>
         </div>
         <div class="checks">
           <label><input id="sendNotifications" type="checkbox" checked> 推送 WxPusher</label>
@@ -537,7 +574,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           <button id="refreshBtn" class="secondary">刷新</button>
         </div>
       </div>
-      <p class="muted">模式1仍走真实接口和真实数据处理，只是不等待 09:25/14:50 等墙上时间；模式2按北京时间等待，已过节点会立即补执行。</p>
+      <p class="muted">模式1仍走真实接口和真实数据处理，只是不等待 09:25/14:50 等墙上时间；模式2按北京时间等待，已过节点会立即补执行。页面输入的 token 只注入本次子进程环境，不写入文件、不回显。</p>
       <div id="message" class="muted"></div>
     </section>
 
@@ -555,6 +592,12 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         <div class="metric"><span>总节点</span><strong id="totalSteps">-</strong></div>
         <div class="metric"><span>更新时间</span><strong id="updatedAt">-</strong></div>
       </div>
+    </section>
+
+    <section id="errorPanel" class="error-panel">
+      <h2>运行错误</h2>
+      <div id="errorText"></div>
+      <pre id="errorTail"></pre>
     </section>
 
     <section class="two">
@@ -610,7 +653,9 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         output_root: $('outputRoot').value,
         topic_id: Number($('topicId').value || {topic_id}),
         send_notifications: $('sendNotifications').checked,
-        skip_moneyflow: $('skipMoneyflow').checked
+        skip_moneyflow: $('skipMoneyflow').checked,
+        tushare_token: $('tushareToken').value.trim(),
+        wxpusher_app_token: $('wxpusherToken').value.trim()
       }};
       const resp = await fetch('/api/start', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body: JSON.stringify(payload)}});
       const data = await resp.json();
@@ -656,6 +701,10 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       const files = Object.entries(artifacts.files || {{}}).map(([name, path]) => ({{name, path, exists: artifacts.file_exists?.[name] ? 'yes' : 'no'}}));
       $('filesTable').innerHTML = table(files, ['name','exists','path']);
       $('logTail').textContent = (job?.log_tail || []).join('\\n');
+      const hasError = !!(job?.error || job?.status === 'failed');
+      $('errorPanel').style.display = hasError ? 'block' : 'none';
+      $('errorText').textContent = hasError ? ((job?.error || 'runner failed') + '；return_code=' + (job?.return_code ?? '-')) : '';
+      $('errorTail').textContent = hasError ? ((job?.last_error_lines || job?.log_tail || []).join('\\n')) : '';
       $('startBtn').disabled = !!job?.running;
       $('stopBtn').disabled = !job?.running;
     }}
@@ -668,6 +717,11 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       }}
     }}
     $('startBtn').addEventListener('click', startJob);
+    $('showTokens').addEventListener('change', () => {{
+      const typ = $('showTokens').checked ? 'text' : 'password';
+      $('tushareToken').type = typ;
+      $('wxpusherToken').type = typ;
+    }});
     $('stopBtn').addEventListener('click', stopJob);
     $('refreshBtn').addEventListener('click', refresh);
     refresh();

@@ -6,13 +6,15 @@ It does not retrain models, change labels/features, connect to brokers, or place
 ## Start
 
 ```bash
-export TUSHARE_TOKEN='...'
-export WXPUSHER_APP_TOKEN='...'
-export WXPUSHER_TOPIC_ID='44635'
 export TUSHARE_PROXY_URL='http://tsy.xiaodefa.cn'
 
 ./scripts/run_forward_shadow_dashboard.sh
 ```
+
+`TUSHARE_TOKEN`, `WXPUSHER_APP_TOKEN`, and WxPusher Topic/GroupId can be entered
+on the dashboard page. If left blank, the dashboard uses environment variables.
+Page-entered tokens are injected only into the child runner process and are not
+written to config files, logs, status JSON, or API responses.
 
 Open:
 
@@ -46,7 +48,8 @@ The live runner writes `live_runner_status.json` before waiting, before running 
 ## Guardrails
 
 - The page starts only the paper-only forward shadow runner.
-- Tokens are read from environment variables and are not displayed by the page.
+- Tokens are read from environment variables or temporary page input and are not displayed by status APIs.
 - The dashboard binds to `127.0.0.1` by default.
 - Stopping a job terminates the runner process only; it does not delete existing output files.
 - Candidate YAML, tail_down definition, U2 definition, v7 model, features, labels, TopN and exit rules are not modified by this dashboard.
+- If the child runner fails, the page shows failed status, return code, and recent log lines for diagnosis.

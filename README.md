@@ -120,6 +120,8 @@ export TUSHARE_PROXY_URL='http://tsy.xiaodefa.cn'
 
 - 模式1：模拟时间点快跑。仍调用真实数据接口和真实处理流程，但不等待 09:25/14:50 等墙上时间，适合历史漏跑补跑。
 - 模式2：真实时间点模式。按北京时间节点等待执行，适合当天 paper tracking。
+- `TUSHARE_TOKEN`、`WXPUSHER_APP_TOKEN` 和 WxPusher Topic/GroupId 可以在页面临时输入；留空则使用本机环境变量。页面输入只注入本次任务进程，不写入文件。
+- 如果任务失败，页面会显示失败状态、返回码和最近错误日志，便于定位。
 
 指定交易日：
 
