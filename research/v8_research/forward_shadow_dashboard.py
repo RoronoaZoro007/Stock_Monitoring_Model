@@ -235,7 +235,8 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     use_run_id_output_dir = bool(payload.get("use_run_id_output_dir", False))
     force_refresh_minutes = bool(payload.get("force_refresh_minutes", False))
     job_id = safe_label(str(payload.get("_job_id") or uuid.uuid4().hex[:12]))
-    run_id = safe_label(str(payload.get("run_id") or f"{trade_date}_{job_id}"))
+    requested_run_id = safe_label(str(payload.get("run_id") or ""))
+    run_id = requested_run_id or safe_label(f"{trade_date}_{bj_now().strftime('%H%M%S')}_{job_id}")
     base_output_root = output_root
     if use_run_id_output_dir:
         output_root = base_output_root / "runs" / run_id
@@ -514,6 +515,29 @@ def latest_run_context(
     if not candidates:
         return None
     return max(candidates, key=lambda x: float(x.get("mtime") or 0.0))
+
+
+def current_job_context(
+    base_output_root: Path,
+    public_job_doc: dict[str, Any] | None,
+    trade_date: str,
+    active_job_id: str,
+) -> dict[str, Any] | None:
+    if not active_job_id or not public_job_doc or not public_job_doc.get("meta"):
+        return None
+    if str(public_job_doc.get("job_id") or "") != active_job_id:
+        return None
+    meta = public_job_doc["meta"]
+    job_trade_date = str(meta.get("trade_date") or "")
+    if job_trade_date != trade_date:
+        return None
+    return {
+        "trade_date": job_trade_date,
+        "output_root": resolve_output_root(str(meta.get("output_root") or ""), base_output_root),
+        "source": "active_dashboard_job",
+        "run_id": meta.get("run_id") or public_job_doc.get("job_id") or "",
+        "status": public_job_doc.get("status") or "",
+    }
 
 
 def numeric(value: str) -> float | None:
@@ -1155,6 +1179,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         <span id="modePill" class="pill">mode: -</span>
         <span id="datePill" class="pill">date: -</span>
         <span id="dataSourcePill" class="pill">source: history</span>
+        <span id="runIdPill" class="pill">run_id: -</span>
         <span id="pidPill" class="pill">pid: -</span>
       </div>
       <div class="metrics">
@@ -1275,6 +1300,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
   </main>
   <script>
     const $ = (id) => document.getElementById(id);
+    let activeRunJobId = localStorage.getItem('forwardShadowActiveJobId') || '';
 
     function dateToYmd(v) {{ return (v || '').replaceAll('-', ''); }}
     function setMessage(text, bad=false) {{
@@ -1476,7 +1502,9 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         setMessage(data.error || '启动失败', true);
         return;
       }}
-      setMessage('任务已启动：' + data.job.job_id);
+      activeRunJobId = data.job.job_id || '';
+      if (activeRunJobId) localStorage.setItem('forwardShadowActiveJobId', activeRunJobId);
+      setMessage('任务已启动：' + data.job.job_id + '；run_id=' + (data.job?.meta?.run_id || '-'));
       refresh();
     }}
     async function stopJob() {{
@@ -1499,6 +1527,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('modePill').textContent = 'mode: ' + (job?.meta?.mode || '-');
       $('datePill').textContent = 'date: ' + selectedDate;
       $('dataSourcePill').textContent = 'source: ' + (data.display_source || data.data_source_mode || 'history');
+      $('runIdPill').textContent = 'run_id: ' + (data.display_run_id || job?.meta?.run_id || '-');
       $('pidPill').textContent = 'pid: ' + (job?.pid || '-');
       if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
       if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
@@ -1607,6 +1636,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         params.set('trade_date', dateToYmd($('tradeDate').value));
         params.set('output_root', $('outputRoot').value);
         params.set('data_source_mode', $('dataSourceMode').value);
+        if ($('dataSourceMode').value === 'rerun_clean' && activeRunJobId) params.set('active_job_id', activeRunJobId);
         const resp = await fetch('/api/status?' + params.toString());
         render(await resp.json());
       }} catch (e) {{
@@ -1628,12 +1658,19 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }});
     $('stopBtn').addEventListener('click', stopJob);
     $('refreshBtn').addEventListener('click', refresh);
-    $('tradeDate').addEventListener('change', refresh);
-    $('outputRoot').addEventListener('change', refresh);
+    function clearActiveRunAndRefresh() {{
+      activeRunJobId = '';
+      localStorage.removeItem('forwardShadowActiveJobId');
+      refresh();
+    }}
+    $('tradeDate').addEventListener('change', clearActiveRunAndRefresh);
+    $('outputRoot').addEventListener('change', clearActiveRunAndRefresh);
     $('dataSourceMode').addEventListener('change', () => {{
       if ($('dataSourceMode').value === 'rerun_clean') {{
+        activeRunJobId = '';
+        localStorage.removeItem('forwardShadowActiveJobId');
         $('useRunIdOutputDir').checked = true;
-        setMessage('重跑清爽视图会自动使用 run_id 输出目录，避免读取同日期历史旧结果。');
+        setMessage('重跑清爽视图会自动使用新的 run_id 输出目录；启动前不会读取同日期旧 run 结果。');
       }}
       refresh();
     }});
@@ -1679,29 +1716,33 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                 data_source_mode = str((params.get("data_source_mode") or ["history"])[0] or "history")
                 if data_source_mode not in {"history", "latest_run", "rerun_clean"}:
                     data_source_mode = "history"
+                active_job_id = str((params.get("active_job_id") or [""])[0] or "")
                 display_trade_date = trade_date
                 display_output_root = base_output_root
                 prior_entry_root: Path | None = None
                 display_source = "history"
                 display_note = "展示所选日期在当前输出目录下已有的历史结果。"
+                display_run_id = ""
                 if data_source_mode == "latest_run":
                     ctx = latest_run_context(base_output_root, public, include_base=True)
                     if ctx:
                         display_trade_date = str(ctx["trade_date"])
                         display_output_root = Path(ctx["output_root"])
                         display_source = str(ctx.get("source") or "latest_run")
+                        display_run_id = str(ctx.get("run_id") or "")
                         display_note = "展示最近一次 dashboard run 或最近状态文件对应的结果。"
                 elif data_source_mode == "rerun_clean":
-                    ctx = latest_run_context(base_output_root, public, trade_date=trade_date, include_base=False)
+                    ctx = current_job_context(base_output_root, public, trade_date=trade_date, active_job_id=active_job_id)
                     prior_entry_root = base_output_root
                     if ctx:
                         display_output_root = Path(ctx["output_root"])
                         display_source = str(ctx.get("source") or "rerun_clean_run")
+                        display_run_id = str(ctx.get("run_id") or "")
                         display_note = "T-1 入场从历史基线读取；T 日结果只读取本次 run 输出目录。"
                     else:
                         display_output_root = base_output_root / "runs" / "__rerun_clean_waiting__"
                         display_source = "rerun_clean_empty"
-                        display_note = "尚未找到本次 run 输出；除 T-1 历史入场外，T 日结果保持空白。"
+                        display_note = "尚未启动本次重跑或当前页面没有本次 job_id；除 T-1 历史入场外，T 日结果保持空白。"
                 payload = {
                     "default_trade_date": today_ymd(),
                     "requested_trade_date": trade_date,
@@ -1709,6 +1750,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     "display_trade_date": display_trade_date,
                     "display_output_root": str(display_output_root),
                     "display_source": display_source,
+                    "display_run_id": display_run_id,
                     "display_note": display_note,
                     "data_source_mode": data_source_mode,
                     "min_trade_date": MIN_TRADE_DATE,
