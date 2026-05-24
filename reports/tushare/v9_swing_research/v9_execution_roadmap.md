@@ -264,6 +264,213 @@
 
 > Batch 3D 已完成。只有当因子 IC 和简单规则均支持存在可重复 alpha 时，才建议进入轻量模型训练 Batch 4；否则暂停训练，补数据或转为 paper diagnostics。
 
+### Step 4A: 轻量模型训练准备
+
+进入条件：
+
+- Batch 3A 市场状态已通过。
+- Batch 3B 行业/拥挤度特征已通过，且已明确哪些字段可训练、哪些只能诊断。
+- Batch 3C 至少存在一组跨年份、跨市场状态可解释的候选因子。
+- Batch 3D 至少存在一个简单规则基准，且后续模型必须以它作为最低对照。
+
+目标：在训练前冻结训练配置，避免看结果后反复改特征、改标签、改样本。
+
+必须预注册：
+
+| 项目 | 要求 |
+|---|---|
+| 目标周期 | 从 3d/5d/10d 中选择，依据 Batch 3C/3D，不依据训练后收益 |
+| 股票池 | 明确全 A、流动性过滤、ST/停牌/上市天数过滤 |
+| 标签 | 固定 forward return 或分类 label，不在训练后修改 |
+| 特征列表 | 仅来自 Batch 3C 通过的因子；行业/概念字段需说明 point-in-time 状态 |
+| 切分 | 时间序列切分，不随机打散 |
+| 成本口径 | 至少包含无成本、基础成本、滑点/冲击成本 |
+| 基准 | Batch 3D 的简单规则 + random baseline |
+| 禁止事项 | 禁止用旧验证期收益挑模型；禁止训练后临时删失败样本 |
+
+必须输出：
+
+- `batch4A_model_training_plan.md`
+- `batch4A_feature_freeze.csv`
+- `batch4A_label_freeze.yaml`
+- `batch4A_split_config.yaml`
+- `batch4A_baseline_reference.csv`
+- `batch4A_conclusion.md`
+- `batch4A_file_sha256.csv`
+
+验收问题：
+
+- 是否能解释为什么选择该 horizon？
+- 是否所有训练字段都能追溯到前置批次？
+- 是否明确哪些字段不能作为训练特征？
+- 是否存在未来信息或幸存者偏差风险？
+
+完成后下一步提示：
+
+> Batch 4A 已完成。请确认训练计划、特征冻结和切分方式。若通过，才允许执行 Batch 4B 轻量模型训练；若不通过，只修改计划，不训练。
+
+### Step 4B: 轻量模型训练
+
+目标：只训练可解释、可复现、低复杂度模型，验证是否优于简单规则。
+
+允许模型：
+
+| 模型 | 用途 |
+|---|---|
+| Logistic / Linear probability | 分类胜率基准，便于解释 |
+| Ridge / ElasticNet | 连续收益或 rank score |
+| LightGBM rank / binary | 非线性基准，但必须限制复杂度 |
+
+禁止模型：
+
+- 深度学习模型。
+- 高复杂度 stacking。
+- 自动化超参大搜索。
+- 用 legacy 验证期反复挑参数。
+
+训练方式：
+
+- 时间序列训练/验证，不随机打散。
+- 所有 scaler/imputer/encoder 只在训练集 fit。
+- 每次训练必须保存 config、特征列表、随机种子、模型文件、预测结果和日志。
+- 训练只使用 Batch 4A 冻结的样本、特征和标签。
+
+必须输出：
+
+- `batch4B_train_config.yaml`
+- `batch4B_model_registry.csv`
+- `batch4B_feature_importance.csv`
+- `batch4B_prediction_scores.parquet`
+- `batch4B_validation_metrics.csv`
+- `batch4B_by_regime_metrics.csv`
+- `batch4B_by_year_metrics.csv`
+- `batch4B_by_industry_metrics.csv`
+- `batch4B_vs_simple_baseline.csv`
+- `batch4B_conclusion.md`
+- `batch4B_file_sha256.csv`
+
+验收问题：
+
+- 是否显著优于 Batch 3D 简单规则和 random baseline？
+- 是否只是牛市阶段有效？
+- 是否只依赖少数行业、少数股票或低流动性样本？
+- 是否在成本后仍有正收益或至少有稳定排序能力？
+- 是否存在训练/验证指标明显背离？
+
+完成后下一步提示：
+
+> Batch 4B 已完成。若模型未稳定打败简单规则，不进入鲁棒性审计；若通过，冻结候选模型进入 Batch 5A 鲁棒性与暴露审计。
+
+### Step 5A: 鲁棒性和暴露审计
+
+目标：判断模型是否只是数据挖掘、牛市 beta、题材抱团或流动性幻觉。
+
+审计维度：
+
+| 维度 | 输出 |
+|---|---|
+| 时间 | 年度、季度、滚动窗口收益/IC |
+| 市场状态 | strong/weak/neutral/extreme_selloff/high_vol/crowding_high |
+| 行业 | 信号数量、收益贡献、最大暴露、行业集中度 |
+| 个股 | 重复入选、收益贡献、最大亏损贡献 |
+| 市值/流动性 | 分桶收益、成交容量、冲击成本敏感性 |
+| 题材拥挤 | 行业成交占比高低分组；概念仅在 point-in-time 数据可用时做 |
+| 极端样本 | 剔除疑似脏数据、保留真实极端波动后的差异 |
+| 收益集中 | 去掉最大 1/3/5/10 个盈利日后表现 |
+| 成本压力 | 5bp/10bp/20bp 滑点，冲击成本，参与率上限 |
+
+必须输出：
+
+- `batch5A_robustness_summary.csv`
+- `batch5A_by_regime.csv`
+- `batch5A_by_year_quarter.csv`
+- `batch5A_industry_exposure.csv`
+- `batch5A_stock_concentration.csv`
+- `batch5A_size_liquidity_capacity.csv`
+- `batch5A_cost_sensitivity.csv`
+- `batch5A_profit_concentration.csv`
+- `batch5A_failure_case_review.csv`
+- `batch5A_conclusion.md`
+- `batch5A_file_sha256.csv`
+
+验收问题：
+
+- 弱市/熊市是否完全失效？
+- 收益是否集中在少数日期、少数股票或少数行业？
+- 成本和容量压力下是否仍有安全垫？
+- 是否明显依赖高拥挤题材？
+- 去掉最大盈利日后是否仍成立？
+
+完成后下一步提示：
+
+> Batch 5A 已完成。若鲁棒性不过关，模型冻结为研究失败样本，不进入 walk-forward；若通过，进入 Batch 5B walk-forward。
+
+### Step 5B: Walk-forward 前向滚动验证
+
+目标：用历史上的滚动前向方式模拟“未来未知”，而不是只看一次固定切分。
+
+要求：
+
+- 训练窗口、验证窗口、步长预先固定。
+- 每期只使用当期之前数据训练。
+- 每期都输出独立指标，不只输出平均值。
+- 不允许根据某几期表现临时改参数。
+
+必须输出：
+
+- `batch5B_walk_forward_config.yaml`
+- `batch5B_period_metrics.csv`
+- `batch5B_period_predictions.parquet`
+- `batch5B_period_trade_summary.csv`
+- `batch5B_failure_periods.md`
+- `batch5B_conclusion.md`
+- `batch5B_file_sha256.csv`
+
+验收问题：
+
+- 多数滚动期是否有效，而不是一两期贡献？
+- 失效期是否集中在某类市场状态？
+- 平均收益、IC、PF、最大回撤是否可接受？
+- 与简单规则相比是否仍有增量？
+
+完成后下一步提示：
+
+> Batch 5B 已完成。若 walk-forward 不稳定，不进入 forward paper tracking；若稳定，冻结候选策略进入 Batch 6 未来纸面跟踪。
+
+### Step 6: Forward paper tracking
+
+目标：在未来未见数据中验证候选策略，不再历史调参。
+
+要求：
+
+- 冻结模型、特征、标签、股票池、成本口径、TopN、调仓周期。
+- 每日或每个调仓日生成 paper-only 信号。
+- 不接券商、不自动下单、不手动跟单。
+- 至少跟踪 60 个新交易日；若信号稀疏，则延长至 90 个交易日或满足最低信号数。
+- 每阶段评估 matched random baseline。
+
+必须输出：
+
+- `forward_model_candidate_config.yaml`
+- `forward_daily_signals/YYYYMMDD.csv`
+- `forward_trade_ledger.csv`
+- `forward_execution_quality.csv`
+- `forward_periodic_evaluation.csv`
+- `forward_random_baseline.csv`
+- `forward_conclusion.md`
+
+验收问题：
+
+- 未见数据中是否仍优于 random 和简单规则？
+- 成本后是否仍为正？
+- 是否依赖少数日期？
+- 行业/个股暴露是否可控？
+- 是否仍只是 paper candidate，而非实盘建议？
+
+完成后下一步提示：
+
+> Forward paper tracking 阶段仅能给出是否继续观察或终止研究的建议，不直接进入实盘。若要模拟盘或实盘，需要另建风控、交易、合规和人工确认流程。
+
 ## 5. 每阶段完成后的固定回复模板
 
 每个阶段完成后，必须按以下结构回复：
