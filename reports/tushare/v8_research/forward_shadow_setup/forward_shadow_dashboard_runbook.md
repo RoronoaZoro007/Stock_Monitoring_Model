@@ -68,3 +68,27 @@ The live runner writes `live_runner_status.json` before waiting, before running 
 - Candidate YAML, tail_down definition, U2 definition, v7 model, features, labels, TopN and exit rules are not modified by this dashboard.
 - If the child runner fails, the page shows failed status, return code, and recent log lines for diagnosis.
 - Repeated-run controls change only output isolation, snapshotting, and provider fetch refresh behavior. They do not change model inference or tracking rules.
+
+## Dashboard Views
+
+The dashboard surfaces the operational state required for paper tracking:
+
+- `当前节点` and `正在做什么`: the live runner step and a human-readable description of the current action.
+- `T-1 纸面持仓与今日卖出`: prior-day paper entry rows, same-day sell recommendations, exit execution records, and per-line settlement summary.
+- `今日尾盘选股与买入价`: current-day frozen buy candidates and the 14:55 paper entry VWAP once recorded.
+- `四线路状态`: S0, S1, S0+R1, and S1+R1 route activation and selected counts.
+
+## Notification Policy
+
+The dashboard and CLI support `NOTIFICATION_POLICY`:
+
+| Policy | Behavior |
+|---|---|
+| `key_events` | Default. Push trade-critical buy/sell/entry messages and failures. |
+| `trade_only` | Push buy/sell/entry paper-tracking messages and failures. |
+| `failures_only` | Push failures only. |
+| `all_steps` | Push every runner checkpoint plus trade messages. |
+| `none` | Do not push messages. |
+
+Buy notifications list the current route, stock, rank, score, expected buy time, and paper entry VWAP after the 14:55 bar is recorded.
+Sell notifications list the checkpoint, expected sell time, stock, recommended sell price, and later the recorded paper exit VWAP.

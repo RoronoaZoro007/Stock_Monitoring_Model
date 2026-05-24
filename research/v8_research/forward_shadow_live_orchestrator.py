@@ -96,6 +96,20 @@ def send_wxpusher(title: str, content: str, topic_id: int, enabled: bool) -> dic
         return {"status": "failed", "error": repr(exc)[:500]}
 
 
+def should_push(policy: str, event_kind: str, status: str = "success") -> bool:
+    if policy == "none":
+        return False
+    if status != "success":
+        return policy in {"all_steps", "key_events", "trade_only", "failures_only"}
+    if policy == "all_steps":
+        return True
+    if policy == "key_events":
+        return event_kind == "trade"
+    if policy == "trade_only":
+        return event_kind == "trade"
+    return False
+
+
 def command_result_message(step: StepResult, extra: str = "") -> str:
     rows = [
         "| 字段 | 值 |",
@@ -117,7 +131,16 @@ def command_result_message(step: StepResult, extra: str = "") -> str:
     return "\n".join(body)
 
 
-def run_cmd(step_id: str, scheduled_time: str, cmd: list[str], push: bool, topic_id: int, extra_summary: str = "") -> StepResult:
+def run_cmd(
+    step_id: str,
+    scheduled_time: str,
+    cmd: list[str],
+    push: bool,
+    topic_id: int,
+    extra_summary: str = "",
+    notification_policy: str = "key_events",
+    event_kind: str = "step",
+) -> StepResult:
     started = time.monotonic()
     proc = subprocess.run(cmd, cwd=ROOT, text=True, capture_output=True)
     result = StepResult(
@@ -131,12 +154,13 @@ def run_cmd(step_id: str, scheduled_time: str, cmd: list[str], push: bool, topic
         command=cmd,
         message=extra_summary,
     )
-    send_wxpusher(
-        f"FS live {scheduled_time} {step_id}: {result.status}",
-        command_result_message(result),
-        topic_id,
-        push,
-    )
+    if should_push(notification_policy, event_kind, result.status):
+        send_wxpusher(
+            f"FS live {scheduled_time} {step_id}: {result.status}",
+            command_result_message(result),
+            topic_id,
+            push,
+        )
     if result.status != "success":
         raise SystemExit(json.dumps(asdict(result), ensure_ascii=False, indent=2))
     return result
@@ -202,6 +226,73 @@ def entry_summary(output_root: Path, trade_date: str) -> str:
     return "## Entry 记录\n\n" + "\n".join([f"- {k}: {v}" for k, v in counts.items()])
 
 
+def price_text(value: Any) -> str:
+    try:
+        v = float(value)
+    except Exception:
+        return ""
+    return f"{v:.3f}" if pd.notna(v) else ""
+
+
+def short_line(value: str) -> str:
+    return {
+        "S0_v7_original_top10": "S0",
+        "S1_U2_filter_only_no_refill": "S1",
+        "S0_v7_original_top10_tail_down": "S0+R1",
+        "S1_U2_filter_only_no_refill_tail_down": "S1+R1",
+    }.get(str(value), str(value))
+
+
+def buy_signal_detail(output_root: Path, trade_date: str) -> str:
+    path = output_root / "daily_signals" / f"{trade_date}_signals.csv"
+    if not path.exists():
+        return ""
+    df = pd.read_csv(path)
+    if df.empty:
+        return ""
+    if "final_selected_flag" in df.columns:
+        df = df[df["final_selected_flag"].astype(str).str.lower().isin(["true", "1"])]
+    if df.empty:
+        return "无今日尾盘纸面买入候选。"
+    display = df.copy()
+    display["line"] = display["strategy_id"].map(short_line)
+    display["score"] = pd.to_numeric(display.get("score"), errors="coerce").map(lambda x: f"{x:.6f}" if pd.notna(x) else "")
+    cols = ["line", "original_v7_rank", "code", "name", "score", "entry_time", "position_weight"]
+    cols = [c for c in cols if c in display.columns]
+    return "\n".join(
+        [
+            "## 今日尾盘纸面买入候选",
+            "",
+            "买入时间口径：`14:55 bar VWAP`。冻结信号时价格可能尚未生成，14:55 bar 完成后会记录 entry VWAP。",
+            "",
+            display[cols].head(40).to_markdown(index=False),
+        ]
+    )
+
+
+def entry_detail(output_root: Path, trade_date: str) -> str:
+    path = output_root / "daily_entry_prices" / f"{trade_date}_entry_prices.csv"
+    if not path.exists():
+        return ""
+    df = pd.read_csv(path)
+    if df.empty:
+        return ""
+    display = df.copy()
+    display["line"] = display["strategy_id"].map(short_line)
+    display["entry_vwap"] = display["entry_vwap"].map(price_text)
+    cols = ["line", "code", "name", "expected_entry_time", "entry_vwap", "weight", "paper_entry_status"]
+    cols = [c for c in cols if c in display.columns]
+    return "\n".join(
+        [
+            "## 今日纸面买入价记录",
+            "",
+            "以下为 paper-only 账本记录，不代表实盘、模拟盘或交易建议。",
+            "",
+            display[cols].head(40).to_markdown(index=False),
+        ]
+    )
+
+
 def write_live_status(
     output_root: Path,
     trade_date: str,
@@ -245,12 +336,13 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior
             message=f"{prior} prior entry file already exists; reconstruction skipped.",
             no_wait=bool(args.no_wait),
         )
-        send_wxpusher(
-            f"FS prior {prior} entry ready",
-            f"# Forward Shadow\n\n{prior} prior entry file already exists; reconstruction skipped.\n\npaper-only。",
-            args.topic_id,
-            bool(args.send_notifications),
-        )
+        if should_push(args.notification_policy, "milestone"):
+            send_wxpusher(
+                f"FS prior {prior} entry ready",
+                f"# Forward Shadow\n\n{prior} prior entry file already exists; reconstruction skipped.\n\npaper-only。",
+                args.topic_id,
+                bool(args.send_notifications),
+            )
         return
     steps = [
         (
@@ -318,7 +410,15 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior
             message=f"Preparing prior entry state for {prior}.",
             no_wait=bool(args.no_wait),
         )
-        result = run_cmd(step_id, scheduled, cmd, bool(args.send_notifications), int(args.topic_id))
+        result = run_cmd(
+            step_id,
+            scheduled,
+            cmd,
+            bool(args.send_notifications),
+            int(args.topic_id),
+            notification_policy=args.notification_policy,
+            event_kind="step",
+        )
         results.append(result)
         write_results(results, output_root, trade_date)
         write_live_status(
@@ -331,12 +431,13 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior
             message=f"Completed prior reconstruction step {step_id}.",
             no_wait=bool(args.no_wait),
         )
-    send_wxpusher(
-        f"FS prior {prior} reconstruction completed",
-        f"# Forward Shadow prior reconstruction\n\n{prior} entry is prepared.\n\n{route_summary(output_root, prior)}\n\n{entry_summary(output_root, prior)}",
-        args.topic_id,
-        bool(args.send_notifications),
-    )
+    if should_push(args.notification_policy, "milestone"):
+        send_wxpusher(
+            f"FS prior {prior} reconstruction completed",
+            f"# Forward Shadow prior reconstruction\n\n{prior} entry is prepared.\n\n{route_summary(output_root, prior)}\n\n{entry_summary(output_root, prior)}",
+            args.topic_id,
+            bool(args.send_notifications),
+        )
 
 
 def minute_fetch_cmd(trade_date: str, signal_date: str | None, output_root: Path, minute_dir: Path, codes_source: str, bar_time: str, mode: str, args: argparse.Namespace) -> list[str]:
@@ -433,7 +534,7 @@ def record_entry_cmd(trade_date: str, output_root: Path, args: argparse.Namespac
 
 
 def exit_monitor_cmd(signal_date: str, settlement_date: str, checkpoint: str, args: argparse.Namespace) -> list[str]:
-    return python_cmd(
+    cmd = python_cmd(
         "research/v8_research/forward_shadow_exit_monitor.py",
         "--signal-date",
         signal_date,
@@ -445,8 +546,10 @@ def exit_monitor_cmd(signal_date: str, settlement_date: str, checkpoint: str, ar
         str(args.minute_dir),
         "--checkpoint",
         checkpoint,
-        "--send-notifications",
     )
+    if args.notification_policy in {"all_steps", "key_events", "trade_only"}:
+        cmd.append("--send-notifications")
+    return cmd
 
 
 def write_results(results: list[StepResult], output_root: Path, trade_date: str) -> Path:
@@ -474,9 +577,15 @@ def main() -> None:
     parser.add_argument("--lookback-trading-days", type=int, default=90)
     parser.add_argument("--skip-moneyflow", action="store_true")
     parser.add_argument("--force-refresh-minutes", action="store_true", help="Re-request minute bars even when local bars already exist; output remains deduped.")
+    parser.add_argument(
+        "--notification-policy",
+        choices=["all_steps", "key_events", "trade_only", "failures_only", "none"],
+        default="key_events",
+        help="WxPusher policy: all steps, key trade events, trade-only, failures-only, or none.",
+    )
     args = parser.parse_args()
 
-    env_check(bool(args.send_notifications))
+    env_check(bool(args.send_notifications) and args.notification_policy != "none")
     trade_date = today_ymd() if args.trade_date == "auto" else str(args.trade_date)
     output_root = Path(args.output_root)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -507,7 +616,15 @@ def main() -> None:
     )
     if args.skip_moneyflow:
         prepare_cmd.append("--skip-moneyflow")
-    prepare = run_cmd("prepare_baseline", "07:30:00", prepare_cmd, bool(args.send_notifications), int(args.topic_id))
+    prepare = run_cmd(
+        "prepare_baseline",
+        "07:30:00",
+        prepare_cmd,
+        bool(args.send_notifications),
+        int(args.topic_id),
+        notification_policy=args.notification_policy,
+        event_kind="milestone",
+    )
     results.append(prepare)
     write_results(results, output_root, trade_date)
     write_live_status(
@@ -620,7 +737,16 @@ def main() -> None:
             extra = route_summary(output_root, trade_date)
         elif extra_kind == "entry":
             extra = entry_summary(output_root, trade_date)
-        result = run_cmd(step_id, hms, cmd, bool(args.send_notifications), int(args.topic_id), extra_summary=extra)
+        result = run_cmd(
+            step_id,
+            hms,
+            cmd,
+            bool(args.send_notifications),
+            int(args.topic_id),
+            extra_summary=extra,
+            notification_policy=args.notification_policy,
+            event_kind="step",
+        )
         results.append(result)
         write_results(results, output_root, trade_date)
         write_live_status(
@@ -635,9 +761,21 @@ def main() -> None:
             no_wait=bool(args.no_wait),
         )
         if extra_kind == "routes":
-            send_wxpusher(f"FS {trade_date} frozen routes", f"# Forward Shadow {trade_date}\n\n{route_summary(output_root, trade_date)}\n\npaper-only。", args.topic_id, bool(args.send_notifications))
+            if should_push(args.notification_policy, "trade"):
+                send_wxpusher(
+                    f"FS {trade_date} 尾盘买入候选已冻结",
+                    f"# Forward Shadow {trade_date} 尾盘买入候选\n\n{route_summary(output_root, trade_date)}\n\n{buy_signal_detail(output_root, trade_date)}\n\npaper-only，不下单，不构成交易建议。",
+                    args.topic_id,
+                    bool(args.send_notifications),
+                )
         if extra_kind == "entry":
-            send_wxpusher(f"FS {trade_date} entry recorded", f"# Forward Shadow {trade_date}\n\n{entry_summary(output_root, trade_date)}\n\npaper-only。", args.topic_id, bool(args.send_notifications))
+            if should_push(args.notification_policy, "trade"):
+                send_wxpusher(
+                    f"FS {trade_date} 14:55纸面买入价已记录",
+                    f"# Forward Shadow {trade_date} 14:55纸面买入价\n\n{entry_summary(output_root, trade_date)}\n\n{entry_detail(output_root, trade_date)}\n\npaper-only，不下单，不构成交易建议。",
+                    args.topic_id,
+                    bool(args.send_notifications),
+                )
 
     path = write_results(results, output_root, trade_date)
     write_live_status(
@@ -649,12 +787,13 @@ def main() -> None:
         message=f"Live paper tracking completed. Steps file: {path}",
         no_wait=bool(args.no_wait),
     )
-    send_wxpusher(
-        f"FS {trade_date} live paper tracking completed",
-        f"# Forward Shadow {trade_date}\n\nLive paper tracking completed.\n\n- steps: `{path}`\n\n{route_summary(output_root, trade_date)}\n\n{entry_summary(output_root, trade_date)}\n\npaper-only，不下单。",
-        args.topic_id,
-        bool(args.send_notifications),
-    )
+    if should_push(args.notification_policy, "milestone"):
+        send_wxpusher(
+            f"FS {trade_date} live paper tracking completed",
+            f"# Forward Shadow {trade_date}\n\nLive paper tracking completed.\n\n- steps: `{path}`\n\n{route_summary(output_root, trade_date)}\n\n{entry_summary(output_root, trade_date)}\n\npaper-only，不下单。",
+            args.topic_id,
+            bool(args.send_notifications),
+        )
     print(json.dumps({"trade_date": trade_date, "prior_trade_date": prior, "steps": str(path), "status": "success"}, ensure_ascii=False, indent=2))
 
 

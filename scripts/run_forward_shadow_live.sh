@@ -16,6 +16,7 @@ Environment:
   TRADE_DATE=YYYYMMDD            default current Beijing date
   SEND_NOTIFICATIONS=1|0         default 1
   WXPUSHER_TOPIC_ID=44635        default 44635
+  NOTIFICATION_POLICY=key_events all_steps|key_events|trade_only|failures_only|none
   NO_WAIT=1                      execute schedule immediately, drill only
   REQUESTS_PER_MINUTE=120        default 120
   BATCH_SIZE=160                 default 160
@@ -49,6 +50,7 @@ REQUESTS_PER_MINUTE="${REQUESTS_PER_MINUTE:-120}"
 BATCH_SIZE="${BATCH_SIZE:-160}"
 LOOKBACK_TRADING_DAYS="${LOOKBACK_TRADING_DAYS:-90}"
 TOPIC_ID="${WXPUSHER_TOPIC_ID:-44635}"
+NOTIFICATION_POLICY="${NOTIFICATION_POLICY:-key_events}"
 
 ARGS=(
   --trade-date "$TRADE_DATE"
@@ -57,6 +59,7 @@ ARGS=(
   --batch-size "$BATCH_SIZE"
   --lookback-trading-days "$LOOKBACK_TRADING_DAYS"
   --topic-id "$TOPIC_ID"
+  --notification-policy "$NOTIFICATION_POLICY"
 )
 
 if [[ "${SEND_NOTIFICATIONS:-1}" == "1" ]]; then

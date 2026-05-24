@@ -162,6 +162,9 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     batch_size = int(payload.get("batch_size") or 160)
     lookback_days = int(payload.get("lookback_trading_days") or 90)
     topic_id = int(payload.get("topic_id") or payload.get("group_id") or default_topic_id)
+    notification_policy = str(payload.get("notification_policy") or "key_events")
+    if notification_policy not in {"all_steps", "key_events", "trade_only", "failures_only", "none"}:
+        raise ValueError("notification_policy must be all_steps, key_events, trade_only, failures_only, or none")
     skip_moneyflow = bool(payload.get("skip_moneyflow", False))
     preserve_snapshot = bool(payload.get("preserve_run_snapshot", False))
     use_run_id_output_dir = bool(payload.get("use_run_id_output_dir", False))
@@ -181,7 +184,8 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     if page_wxpusher_token:
         env["WXPUSHER_APP_TOKEN"] = page_wxpusher_token
 
-    health = env_health(send_notifications, env)
+    effective_notifications = send_notifications and notification_policy != "none"
+    health = env_health(effective_notifications, env)
     if health["missing_required"]:
         raise ValueError("missing credentials: " + ", ".join(health["missing_required"]) + ". Set env vars or enter them on the page.")
 
@@ -200,8 +204,10 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         str(lookback_days),
         "--topic-id",
         str(topic_id),
+        "--notification-policy",
+        notification_policy,
     ]
-    if send_notifications:
+    if effective_notifications:
         cmd.append("--send-notifications")
     if mode == "fast_replay":
         cmd.append("--no-wait")
@@ -217,6 +223,7 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         "trade_date": trade_date,
         "mode": mode,
         "send_notifications": send_notifications,
+        "effective_notifications": effective_notifications,
         "output_root": str(output_root),
         "base_output_root": str(base_output_root),
         "run_id": run_id,
@@ -227,6 +234,7 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         "batch_size": batch_size,
         "lookback_trading_days": lookback_days,
         "topic_id": topic_id,
+        "notification_policy": notification_policy,
         "skip_moneyflow": skip_moneyflow,
         "credential_source": {
             "tushare_token": "page_input" if page_tushare_token else "environment",
@@ -427,6 +435,138 @@ def summarize_by_strategy(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     return sorted(out, key=lambda x: x["strategy_id"])
 
 
+def line_short(value: str) -> str:
+    mapping = {
+        "S0_v7_original_top10": "S0",
+        "S1_U2_filter_only_no_refill": "S1",
+        "S0_v7_original_top10_tail_down": "S0+R1",
+        "S1_U2_filter_only_no_refill_tail_down": "S1+R1",
+    }
+    return mapping.get(str(value), str(value))
+
+
+def infer_prior_signal_date(output_root: Path, trade_date: str) -> str | None:
+    candidates: set[str] = set()
+    entry_dir = output_root / "daily_entry_prices"
+    for path in entry_dir.glob("*_entry_prices.csv"):
+        day = path.name.split("_", 1)[0]
+        if day.isdigit() and len(day) == 8 and day < trade_date:
+            candidates.add(day)
+    for folder in ["daily_exit_recommendations", "daily_exit_execution", "daily_exit_settlement"]:
+        for path in (output_root / folder).glob(f"*_{trade_date}_*.csv"):
+            day = path.name.split("_", 1)[0]
+            if day.isdigit() and len(day) == 8 and day < trade_date:
+                candidates.add(day)
+    return max(candidates) if candidates else None
+
+
+def select_columns(rows: list[dict[str, str]], cols: list[str], limit: int = 80) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows[:limit]:
+        item: dict[str, Any] = {}
+        for col in cols:
+            item[col] = row.get(col, "")
+        if "strategy_id" in row:
+            item["line"] = line_short(row.get("strategy_id", ""))
+        out.append(item)
+    return out
+
+
+def load_prior_context(output_root: Path, trade_date: str) -> dict[str, Any]:
+    prior = infer_prior_signal_date(output_root, trade_date)
+    if not prior:
+        return {
+            "prior_signal_date": None,
+            "status": "missing_prior_signal_date",
+            "message": "未找到前一交易日纸面选股/入场文件。",
+            "entries": [],
+            "sell_recommendations": [],
+            "sell_execution": [],
+            "settlement_summary": [],
+        }
+    entry_path = output_root / "daily_entry_prices" / f"{prior}_entry_prices.csv"
+    rec_path = output_root / "daily_exit_recommendations" / f"{prior}_{trade_date}_exit_recommendations.csv"
+    exec_path = output_root / "daily_exit_execution" / f"{prior}_{trade_date}_exit_execution.csv"
+    settle_path = output_root / "daily_exit_settlement" / f"{prior}_{trade_date}_exit_settlement.csv"
+    entry_rows = read_csv_rows(entry_path, max_rows=1000)
+    rec_rows = read_csv_rows(rec_path, max_rows=1000)
+    exec_rows = read_csv_rows(exec_path, max_rows=1000)
+    settle_rows = read_csv_rows(settle_path, max_rows=1000)
+    summary: list[dict[str, Any]] = []
+    if settle_rows:
+        grouped: dict[str, dict[str, Any]] = {}
+        for row in settle_rows:
+            sid = row.get("strategy_id", "")
+            item = grouped.setdefault(sid, {"line": line_short(sid), "positions": 0, "ret_5bp_sum": 0.0, "ret_10bp_sum": 0.0, "ret_count": 0})
+            item["positions"] += 1
+            r5 = numeric(str(row.get("return_5bp", "")))
+            r10 = numeric(str(row.get("return_10bp_impact", "")))
+            w = numeric(str(row.get("weight", ""))) or 0.0
+            if r5 is not None:
+                item["ret_5bp_sum"] += r5 * w
+            if r10 is not None:
+                item["ret_10bp_sum"] += r10 * w
+                item["ret_count"] += 1
+        for item in grouped.values():
+            item["daily_return_5bp"] = item.pop("ret_5bp_sum")
+            item["daily_return_10bp_impact"] = item.pop("ret_10bp_sum")
+            item.pop("ret_count", None)
+            summary.append(item)
+    return {
+        "prior_signal_date": prior,
+        "status": "available" if entry_rows else "missing_entry_file",
+        "message": "" if entry_rows else f"未找到 {prior} 的纸面入场文件。",
+        "entries": select_columns(entry_rows, ["line", "strategy_id", "code", "name", "original_v7_rank", "score", "expected_entry_time", "entry_vwap", "weight", "paper_entry_status"], limit=80),
+        "sell_recommendations": select_columns(rec_rows, ["line", "checkpoint", "decision_time", "expected_exit_time", "strategy_id", "code", "name", "entry_vwap", "recommended_sell_price", "exit_reason", "recommendation_status"], limit=120),
+        "sell_execution": select_columns(exec_rows, ["line", "actual_exit_time", "strategy_id", "code", "name", "entry_vwap", "exit_vwap", "exit_reason", "return_5bp", "return_10bp_impact", "paper_exit_status"], limit=120),
+        "settlement_summary": summary,
+        "files": {
+            "prior_entry": str(entry_path),
+            "sell_recommendations": str(rec_path),
+            "sell_execution": str(exec_path),
+            "sell_settlement": str(settle_path),
+        },
+    }
+
+
+def load_today_context(output_root: Path, trade_date: str) -> dict[str, Any]:
+    signals_path = output_root / "daily_signals" / f"{trade_date}_signals.csv"
+    entry_path = output_root / "daily_entry_prices" / f"{trade_date}_entry_prices.csv"
+    signals = read_csv_rows(signals_path, max_rows=1000)
+    entries = read_csv_rows(entry_path, max_rows=1000)
+    entry_by_key = {(row.get("strategy_id", ""), row.get("code", "")): row for row in entries}
+    buy_rows: list[dict[str, Any]] = []
+    for row in signals:
+        if str(row.get("final_selected_flag", "")).lower() not in {"true", "1", "yes"}:
+            continue
+        entry = entry_by_key.get((row.get("strategy_id", ""), row.get("code", "")), {})
+        buy_rows.append(
+            {
+                "line": line_short(row.get("strategy_id", "")),
+                "strategy_id": row.get("strategy_id", ""),
+                "code": row.get("code", ""),
+                "name": row.get("name", ""),
+                "rank": row.get("original_v7_rank", ""),
+                "score": row.get("score", ""),
+                "in_u2": row.get("in_u2", ""),
+                "tail_down": row.get("tail_down_flag", ""),
+                "expected_entry_time": entry.get("expected_entry_time") or row.get("entry_time", "14:55"),
+                "entry_vwap": entry.get("entry_vwap", ""),
+                "entry_status": entry.get("paper_entry_status", "pending_entry_price"),
+                "weight": entry.get("weight") or row.get("position_weight", ""),
+            }
+        )
+    return {
+        "buy_signals": buy_rows,
+        "signals_generated": bool(signals),
+        "entries_recorded": bool(entries),
+        "files": {
+            "signals": str(signals_path),
+            "entry_prices": str(entry_path),
+        },
+    }
+
+
 def dashboard_artifacts(output_root: Path, trade_date: str) -> dict[str, Any]:
     live_dir = output_root / "live_runner"
     status_path = live_dir / f"{trade_date}_live_runner_status.json"
@@ -460,6 +600,8 @@ def dashboard_artifacts(output_root: Path, trade_date: str) -> dict[str, Any]:
         "candidate_status": candidates,
         "signal_summary": summarize_by_strategy(signals),
         "entry_counts": entry_counts,
+        "prior_context": load_prior_context(output_root, trade_date),
+        "today_context": load_today_context(output_root, trade_date),
         "files": files,
         "file_exists": exists,
     }
@@ -572,7 +714,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .pill.ok {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .pill.bad {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
     .pill.warn {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
-    .metrics {{ display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 10px; }}
+    .metrics {{ display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 10px; }}
     .metric {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #fcfcfd; }}
     .metric span {{ display: block; color: var(--muted); font-size: 12px; }}
     .metric strong {{ font-size: 18px; }}
@@ -591,6 +733,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }}
     .muted {{ color: var(--muted); }}
     .two {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+    .notice {{ padding: 10px 12px; border: 1px solid #fedf89; background: #fffaeb; color: #93370d; border-radius: 6px; }}
+    h2 {{ font-size: 16px; margin: 0 0 8px; }}
     .secret-row {{ grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 220px; gap: 12px; align-items: end; }}
     .error-panel {{
       display: none;
@@ -643,6 +787,16 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           <label for="topicId">WxPusher Topic / GroupId</label>
           <input id="topicId" type="number" value="{topic_id}">
         </div>
+        <div>
+          <label for="notificationPolicy">消息推送策略</label>
+          <select id="notificationPolicy">
+            <option value="key_events" selected>关键交易 + 失败</option>
+            <option value="trade_only">买卖提示 + 错误</option>
+            <option value="failures_only">只推失败</option>
+            <option value="all_steps">所有节点</option>
+            <option value="none">不推送</option>
+          </select>
+        </div>
         <div class="secret-row">
           <div>
             <label for="tushareToken">TUSHARE_TOKEN（可选，留空使用环境变量）</label>
@@ -682,6 +836,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       </div>
       <div class="metrics" style="margin-top:12px">
         <div class="metric"><span>当前节点</span><strong id="currentStep">-</strong></div>
+        <div class="metric"><span>正在做什么</span><strong id="currentStepMeaning">-</strong></div>
         <div class="metric"><span>节点状态</span><strong id="runnerState">-</strong></div>
         <div class="metric"><span>已完成</span><strong id="completedSteps">0</strong></div>
         <div class="metric"><span>总节点</span><strong id="totalSteps">-</strong></div>
@@ -693,6 +848,37 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       <h2>运行错误</h2>
       <div id="errorText"></div>
       <pre id="errorTail"></pre>
+    </section>
+
+    <section>
+      <h2>T-1 纸面持仓与今日卖出</h2>
+      <div id="priorNotice" class="notice"></div>
+      <div class="two" style="margin-top:12px">
+        <div>
+          <h2>前一交易日纸面买入</h2>
+          <div id="priorEntriesTable"></div>
+        </div>
+        <div>
+          <h2>今日卖出提示</h2>
+          <div id="sellRecommendationsTable"></div>
+        </div>
+      </div>
+      <div class="two" style="margin-top:12px">
+        <div>
+          <h2>今日退出记录</h2>
+          <div id="sellExecutionTable"></div>
+        </div>
+        <div>
+          <h2>线路结算摘要</h2>
+          <div id="settlementSummaryTable"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>今日尾盘选股与买入价</h2>
+      <div id="todayBuyNotice" class="muted"></div>
+      <div id="todayBuyTable"></div>
     </section>
 
     <section class="two">
@@ -739,6 +925,47 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         rows.map(r => '<tr>' + cols.map(c => '<td>'+esc(r[c.key || c])+'</td>').join('') + '</tr>').join('') +
         '</tbody></table>';
     }}
+    function stepDescription(step) {{
+      const map = {{
+        prepare_baseline: '检查交易日历、股票池、T-1 日线与基础数据',
+        prior_reconstruction_skipped: '前一交易日纸面买入记录已存在，跳过重建',
+        prior_auction_guard: '补齐前一交易日集合竞价侧数据',
+        prior_fetch_until_1430: '补齐前一交易日 14:30 前分钟线',
+        prior_build_features: '重建前一交易日尾盘特征',
+        prior_build_score: '重建前一交易日 v7 score',
+        prior_freeze_signals: '重建前一交易日四线路纸面信号',
+        prior_record_entry: '记录前一交易日 14:55 纸面买入 VWAP',
+        auction_guard_0925: '检查 T-1 收盘竞价与 T 日开盘竞价数据',
+        fetch_exit_0935_bar: '拉取 09:35 退出判断 bar',
+        exit_check_0935: '检查第一档止盈/止损卖出条件',
+        fetch_exit_0940_bar: '拉取 09:40 纸面卖出执行 bar',
+        exit_exec_0940: '记录第一档纸面卖出 VWAP',
+        fetch_exit_0945_bar: '拉取 09:45 退出判断 bar',
+        exit_check_0945: '检查第二档卖出条件',
+        fetch_exit_0950_bar: '拉取 09:50 纸面卖出执行 bar',
+        exit_exec_0950: '记录第二档纸面卖出 VWAP',
+        fetch_exit_1000_bar: '拉取 10:00 退出判断 bar',
+        exit_check_1000: '检查第三档卖出条件',
+        fetch_exit_1005_bar: '拉取 10:05 纸面卖出执行 bar',
+        exit_exec_1005: '记录第三档纸面卖出 VWAP',
+        fetch_exit_1025_bar: '拉取 10:25 兜底卖出预警 bar',
+        exit_prealert_1025: '生成 10:30 兜底卖出预提示',
+        fetch_exit_1030_bar: '拉取 10:30 默认退出 bar',
+        exit_default_1030: '记录未触发提前退出股票的默认卖出',
+        fetch_tail_until_1430: '拉取 T 日 14:30 前分钟线',
+        fetch_tail_1435_bar: '拉取 14:35 增量 bar',
+        fetch_tail_1440_bar: '拉取 14:40 增量 bar',
+        fetch_tail_1445_bar: '拉取 14:45 增量 bar',
+        fetch_tail_1450_bar: '拉取 14:50 关键特征 bar',
+        build_forward_features: '只使用 <=14:50 数据构建今日特征',
+        build_score_matrix: '用 v7 locked 模型生成今日 score matrix',
+        freeze_signals: '冻结四条线路的今日尾盘纸面买入候选',
+        fetch_tail_1455_bar: '拉取 14:55 纸面买入 VWAP bar',
+        record_entry_1455_vwap: '记录今日 14:55 纸面买入价',
+        fetch_tail_1500_bar: '拉取 15:00 归档 bar'
+      }};
+      return map[step] || '等待或执行 paper-only 跟踪节点';
+    }}
     async function startJob() {{
       const payload = {{
         trade_date: dateToYmd($('tradeDate').value),
@@ -748,6 +975,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         output_root: $('outputRoot').value,
         run_id: $('runId').value.trim(),
         topic_id: Number($('topicId').value || {topic_id}),
+        notification_policy: $('notificationPolicy').value,
         send_notifications: $('sendNotifications').checked,
         skip_moneyflow: $('skipMoneyflow').checked,
         use_run_id_output_dir: $('useRunIdOutputDir').checked,
@@ -784,6 +1012,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
       if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
       $('currentStep').textContent = live.current_step_id || '-';
+      $('currentStepMeaning').textContent = stepDescription(live.current_step_id || '');
       $('runnerState').textContent = live.status || '-';
       $('completedSteps').textContent = live.completed_steps ?? 0;
       $('totalSteps').textContent = live.total_steps ?? '-';
@@ -796,6 +1025,29 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       ]);
       const entryRows = Object.entries(artifacts.entry_counts || {{}}).map(([status, count]) => ({{status, count}}));
       $('entryCounts').innerHTML = table(entryRows, ['status','count']);
+      const prior = artifacts.prior_context || {{}};
+      $('priorNotice').textContent = prior.prior_signal_date
+        ? ('T-1 signal_date: ' + prior.prior_signal_date + (prior.message ? '；' + prior.message : ''))
+        : (prior.message || '未找到前一交易日纸面选股信息。');
+      $('priorEntriesTable').innerHTML = table(prior.entries || [], [
+        {{key:'line', label:'线路'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'original_v7_rank', label:'rank'}}, {{key:'entry_vwap', label:'买入VWAP'}}, {{key:'weight', label:'权重'}}, {{key:'paper_entry_status', label:'状态'}}
+      ]);
+      $('sellRecommendationsTable').innerHTML = table(prior.sell_recommendations || [], [
+        {{key:'line', label:'线路'}}, {{key:'decision_time', label:'判断'}}, {{key:'expected_exit_time', label:'建议卖出'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'recommended_sell_price', label:'推荐卖价'}}, {{key:'exit_reason', label:'原因'}}, {{key:'recommendation_status', label:'状态'}}
+      ]);
+      $('sellExecutionTable').innerHTML = table(prior.sell_execution || [], [
+        {{key:'line', label:'线路'}}, {{key:'actual_exit_time', label:'卖出时间'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'entry_vwap', label:'买入'}}, {{key:'exit_vwap', label:'卖出'}}, {{key:'return_10bp_impact', label:'10bp+impact'}}, {{key:'paper_exit_status', label:'状态'}}
+      ]);
+      $('settlementSummaryTable').innerHTML = table(prior.settlement_summary || [], [
+        {{key:'line', label:'线路'}}, {{key:'positions', label:'笔数'}}, {{key:'daily_return_5bp', label:'5bp日收益'}}, {{key:'daily_return_10bp_impact', label:'10bp+impact日收益'}}
+      ]);
+      const today = artifacts.today_context || {{}};
+      $('todayBuyNotice').textContent = today.signals_generated
+        ? (today.entries_recorded ? '今日已生成信号并记录 14:55 纸面买入价。' : '今日已冻结尾盘候选，14:55 买入价尚未记录。')
+        : '今日尾盘选股信号尚未生成。';
+      $('todayBuyTable').innerHTML = table(today.buy_signals || [], [
+        {{key:'line', label:'线路'}}, {{key:'rank', label:'rank'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'score', label:'score'}}, {{key:'expected_entry_time', label:'建议买入'}}, {{key:'entry_vwap', label:'买入VWAP'}}, {{key:'entry_status', label:'状态'}}, {{key:'weight', label:'权重'}}
+      ]);
       $('stepsTable').innerHTML = table(artifacts.steps || [], [
         {{key:'step_id', label:'step'}}, {{key:'scheduled_time', label:'scheduled'}}, {{key:'status', label:'status'}}, {{key:'duration_seconds', label:'seconds'}}, {{key:'return_code', label:'rc'}}
       ]);
