@@ -362,6 +362,8 @@ def minute_fetch_cmd(trade_date: str, signal_date: str | None, output_root: Path
         "--retry-until-complete-seconds",
         "40",
     )
+    if args.force_refresh_minutes:
+        cmd.append("--refresh")
     if codes_source == "top3000":
         cmd.extend(["--rank-file", str(args.rank_file), "--top-rank", "3000"])
     if signal_date:
@@ -471,6 +473,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=160)
     parser.add_argument("--lookback-trading-days", type=int, default=90)
     parser.add_argument("--skip-moneyflow", action="store_true")
+    parser.add_argument("--force-refresh-minutes", action="store_true", help="Re-request minute bars even when local bars already exist; output remains deduped.")
     args = parser.parse_args()
 
     env_check(bool(args.send_notifications))

@@ -400,7 +400,7 @@ def run_minute_fetch(args: argparse.Namespace) -> dict[str, Any]:
         codes = read_top_codes(Path(args.rank_file), int(args.top_rank), args.trade_date)
     report_dir = ensure_report_dir(output_root)
     started = time.monotonic()
-    present = existing_required_codes(codes, args.trade_date, args.bar_time, args.mode, minute_dir)
+    present = set() if args.refresh else existing_required_codes(codes, args.trade_date, args.bar_time, args.mode, minute_dir)
     missing = sorted(set(codes) - present)
     fetch_rounds: list[dict[str, Any]] = []
     deadline = time.monotonic() + max(0, float(args.retry_until_complete_seconds))
@@ -442,6 +442,7 @@ def run_minute_fetch(args: argparse.Namespace) -> dict[str, Any]:
         "symbols_expected": len(codes),
         "symbols_with_required_bar": len(present),
         "symbols_missing_required_bar": len(missing),
+        "refresh": bool(args.refresh),
         "missing_codes_sample": missing[:30],
         "fetch_rounds": fetch_rounds,
         "duration_seconds": round(time.monotonic() - started, 3),
@@ -609,6 +610,7 @@ def parse_args() -> argparse.Namespace:
     mins.add_argument("--max-retries", type=int, default=3)
     mins.add_argument("--retry-until-complete-seconds", type=float, default=0)
     mins.add_argument("--retry-interval-seconds", type=float, default=5)
+    mins.add_argument("--refresh", action="store_true", help="Ignore existing minute bars and request them again; output remains deduped by ts_code/trade_time.")
     mins.set_defaults(func=run_minute_fetch)
 
     entry = sub.add_parser("record-entry")

@@ -31,6 +31,20 @@ http://127.0.0.1:8788/
 
 In live mode, if the dashboard is started after a scheduled checkpoint, the runner catches up that checkpoint immediately. For true same-day use, start the dashboard and job before 09:25 Beijing time.
 
+## Repeated Runs
+
+When the same trade date is run more than once, the default runner reuses the
+same dated output files. Use these dashboard options when you need auditability:
+
+| Option | Behavior |
+|---|---|
+| `run_id 输出目录` | Writes this job under `OUTPUT_ROOT/runs/RUN_ID`, isolating it from prior runs. |
+| `保留本次 run 快照` | Copies lightweight outputs, logs, signal files, score files, feature files, and guard reports into `OUTPUT_ROOT/run_snapshots/RUN_ID` after the job exits. Raw minute parquet files are not copied. |
+| `强制重新下载分钟线` | Adds minute-fetch `--refresh`, so existing minute bars are ignored for fetch planning and requested again. Written minute parquet remains deduped by `ts_code + trade_time` with the latest row kept. |
+
+If both `run_id 输出目录` and `保留本次 run 快照` are enabled, the run outputs are isolated
+under `runs/RUN_ID` and a lightweight copy is also written under `run_snapshots/RUN_ID`.
+
 ## Progress Files
 
 The dashboard reads these runner outputs:
@@ -53,3 +67,4 @@ The live runner writes `live_runner_status.json` before waiting, before running 
 - Stopping a job terminates the runner process only; it does not delete existing output files.
 - Candidate YAML, tail_down definition, U2 definition, v7 model, features, labels, TopN and exit rules are not modified by this dashboard.
 - If the child runner fails, the page shows failed status, return code, and recent log lines for diagnosis.
+- Repeated-run controls change only output isolation, snapshotting, and provider fetch refresh behavior. They do not change model inference or tracking rules.

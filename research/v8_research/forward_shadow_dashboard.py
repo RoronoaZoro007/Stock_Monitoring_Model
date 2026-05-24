@@ -7,6 +7,7 @@ import html
 import json
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import threading
@@ -140,6 +141,12 @@ class DashboardState:
         return bool(proc and proc.poll() is None)
 
 
+def safe_label(value: str) -> str:
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+    out = "".join(ch if ch in allowed else "_" for ch in value.strip())
+    return out[:80]
+
+
 def command_for_job(payload: dict[str, Any], default_output_root: Path, default_topic_id: int) -> tuple[list[str], dict[str, str], dict[str, Any]]:
     trade_date = normalize_trade_date(payload.get("trade_date"))
     if trade_date < MIN_TRADE_DATE:
@@ -156,6 +163,14 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     lookback_days = int(payload.get("lookback_trading_days") or 90)
     topic_id = int(payload.get("topic_id") or payload.get("group_id") or default_topic_id)
     skip_moneyflow = bool(payload.get("skip_moneyflow", False))
+    preserve_snapshot = bool(payload.get("preserve_run_snapshot", False))
+    use_run_id_output_dir = bool(payload.get("use_run_id_output_dir", False))
+    force_refresh_minutes = bool(payload.get("force_refresh_minutes", False))
+    job_id = safe_label(str(payload.get("_job_id") or uuid.uuid4().hex[:12]))
+    run_id = safe_label(str(payload.get("run_id") or f"{trade_date}_{job_id}"))
+    base_output_root = output_root
+    if use_run_id_output_dir:
+        output_root = base_output_root / "runs" / run_id
 
     env = os.environ.copy()
     env.setdefault("TUSHARE_PROXY_URL", "http://tsy.xiaodefa.cn")
@@ -192,6 +207,8 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         cmd.append("--no-wait")
     if skip_moneyflow:
         cmd.append("--skip-moneyflow")
+    if force_refresh_minutes:
+        cmd.append("--force-refresh-minutes")
 
     warnings = []
     if mode == "live_time" and trade_date != today_ymd():
@@ -201,6 +218,11 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         "mode": mode,
         "send_notifications": send_notifications,
         "output_root": str(output_root),
+        "base_output_root": str(base_output_root),
+        "run_id": run_id,
+        "use_run_id_output_dir": use_run_id_output_dir,
+        "preserve_run_snapshot": preserve_snapshot,
+        "force_refresh_minutes": force_refresh_minutes,
         "requests_per_minute": requests_per_minute,
         "batch_size": batch_size,
         "lookback_trading_days": lookback_days,
@@ -213,6 +235,60 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         "warnings": warnings,
     }
     return cmd, env, meta
+
+
+def copy_if_exists(src: Path, dst_root: Path, base: Path) -> None:
+    if not src.exists():
+        return
+    rel_path = src.relative_to(base) if src.is_relative_to(base) else Path(src.name)
+    dst = dst_root / rel_path
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+
+
+def preserve_run_snapshot(job: dict[str, Any]) -> Path:
+    meta = job.get("meta", {})
+    trade_date = str(meta.get("trade_date"))
+    output_root = Path(str(meta.get("output_root")))
+    base_output_root = Path(str(meta.get("base_output_root") or output_root))
+    run_id = safe_label(str(meta.get("run_id") or job.get("job_id") or trade_date))
+    snapshot_root = base_output_root / "run_snapshots" / run_id
+    snapshot_root.mkdir(parents=True, exist_ok=True)
+    files = [
+        output_root / "live_runner" / f"{trade_date}_live_runner_status.json",
+        output_root / "live_runner" / f"{trade_date}_live_runner_steps.csv",
+        output_root / "test_features" / f"{trade_date}_forward_features.csv",
+        output_root / "test_features" / f"{trade_date}_forward_features_meta.json",
+        output_root / "score_matrices" / f"{trade_date}_score_matrix.csv",
+        output_root / "score_matrices" / f"{trade_date}_score_matrix_meta.json",
+        output_root / "daily_signals" / f"{trade_date}_signals.csv",
+        output_root / "daily_entry_prices" / f"{trade_date}_entry_prices.csv",
+        output_root / "daily_ledgers" / f"{trade_date}_ledgers.csv",
+        output_root / "daily_execution_quality" / f"{trade_date}_execution_quality.csv",
+        output_root / "forward_shadow_candidate_status.csv",
+        output_root / "forward_shadow_daily_summary.csv",
+        output_root / "forward_shadow_trade_details.csv",
+        output_root / "forward_shadow_execution_quality.csv",
+        Path(str(job.get("log_path") or "")),
+    ]
+    for path in sorted((output_root / "data_guards").glob(f"{trade_date}_*.json")):
+        files.append(path)
+    for src in files:
+        if src and str(src) != ".":
+            copy_if_exists(src, snapshot_root, output_root)
+    manifest = {
+        "job_id": job.get("job_id"),
+        "trade_date": trade_date,
+        "run_id": run_id,
+        "created_at_beijing": bj_now().isoformat(timespec="seconds"),
+        "status": job.get("status"),
+        "return_code": job.get("return_code"),
+        "meta": meta,
+        "log_path": job.get("log_path"),
+        "note": "Snapshot contains lightweight run outputs only; raw minute parquet files are not copied.",
+    }
+    (snapshot_root / "snapshot_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return snapshot_root
 
 
 def consume_process(job: dict[str, Any], state: DashboardState) -> None:
@@ -235,6 +311,12 @@ def consume_process(job: dict[str, Any], state: DashboardState) -> None:
                 if status == "failed":
                     job["error"] = f"runner exited with code {return_code}"
                     job["last_error_lines"] = list(job.get("log_tail") or [])[-30:]
+            if job.get("meta", {}).get("preserve_run_snapshot"):
+                try:
+                    snapshot_path = preserve_run_snapshot(job)
+                    job["snapshot_path"] = str(snapshot_path)
+                except Exception as exc:
+                    job["snapshot_error"] = repr(exc)
             job["status"] = status
             job["return_code"] = return_code
             job["finished_at_beijing"] = bj_now().isoformat(timespec="seconds")
@@ -250,9 +332,11 @@ def start_job(state: DashboardState, payload: dict[str, Any]) -> dict[str, Any]:
     with state.lock:
         if state.has_running_job():
             raise RuntimeError("a dashboard job is already running")
+    job_id = uuid.uuid4().hex[:12]
+    payload = dict(payload)
+    payload["_job_id"] = job_id
     cmd, env, meta = command_for_job(payload, state.output_root, state.topic_id)
     DEFAULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
-    job_id = uuid.uuid4().hex[:12]
     log_path = DEFAULT_LOG_DIR / f"{meta['trade_date']}_{job_id}.log"
     proc = subprocess.Popen(
         cmd,
@@ -277,6 +361,8 @@ def start_job(state: DashboardState, payload: dict[str, Any]) -> dict[str, Any]:
         "return_code": None,
         "log_path": str(log_path),
         "log_tail": deque(maxlen=300),
+        "snapshot_path": None,
+        "snapshot_error": None,
     }
     with state.lock:
         state.jobs[job_id] = job
@@ -398,6 +484,8 @@ def public_job(job: dict[str, Any] | None) -> dict[str, Any] | None:
         "command": job.get("safe_command"),
         "error": job.get("error"),
         "last_error_lines": list(job.get("last_error_lines") or []),
+        "snapshot_path": job.get("snapshot_path"),
+        "snapshot_error": job.get("snapshot_error"),
     }
 
 
@@ -548,6 +636,10 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           <input id="outputRoot" value="{html.escape(rel(default_output_root))}">
         </div>
         <div>
+          <label for="runId">run_id（可选）</label>
+          <input id="runId" placeholder="留空自动生成">
+        </div>
+        <div>
           <label for="topicId">WxPusher Topic / GroupId</label>
           <input id="topicId" type="number" value="{topic_id}">
         </div>
@@ -567,6 +659,9 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         <div class="checks">
           <label><input id="sendNotifications" type="checkbox" checked> 推送 WxPusher</label>
           <label><input id="skipMoneyflow" type="checkbox"> 跳过 moneyflow</label>
+          <label><input id="useRunIdOutputDir" type="checkbox"> run_id 输出目录</label>
+          <label><input id="preserveRunSnapshot" type="checkbox"> 保留本次 run 快照</label>
+          <label><input id="forceRefreshMinutes" type="checkbox"> 强制重新下载分钟线</label>
         </div>
         <div class="bar">
           <button id="startBtn">启动</button>
@@ -574,7 +669,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           <button id="refreshBtn" class="secondary">刷新</button>
         </div>
       </div>
-      <p class="muted">模式1仍走真实接口和真实数据处理，只是不等待 09:25/14:50 等墙上时间；模式2按北京时间等待，已过节点会立即补执行。页面输入的 token 只注入本次子进程环境，不写入文件、不回显。</p>
+      <p class="muted">模式1仍走真实接口和真实数据处理，只是不等待 09:25/14:50 等墙上时间；模式2按北京时间等待，已过节点会立即补执行。run_id 输出目录会写入 `输出目录/runs/run_id`；快照会复制轻量结果到 `输出目录/run_snapshots/run_id`；强制重新下载分钟线会重新请求分钟 bar 并按时间键覆盖去重。页面输入的 token 只注入本次子进程环境，不写入文件、不回显。</p>
       <div id="message" class="muted"></div>
     </section>
 
@@ -651,9 +746,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         requests_per_minute: Number($('rpm').value || 120),
         batch_size: Number($('batchSize').value || 160),
         output_root: $('outputRoot').value,
+        run_id: $('runId').value.trim(),
         topic_id: Number($('topicId').value || {topic_id}),
         send_notifications: $('sendNotifications').checked,
         skip_moneyflow: $('skipMoneyflow').checked,
+        use_run_id_output_dir: $('useRunIdOutputDir').checked,
+        preserve_run_snapshot: $('preserveRunSnapshot').checked,
+        force_refresh_minutes: $('forceRefreshMinutes').checked,
         tushare_token: $('tushareToken').value.trim(),
         wxpusher_app_token: $('wxpusherToken').value.trim()
       }};
@@ -682,6 +781,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('modePill').textContent = 'mode: ' + (job?.meta?.mode || '-');
       $('datePill').textContent = 'date: ' + (job?.meta?.trade_date || data.default_trade_date || '-');
       $('pidPill').textContent = 'pid: ' + (job?.pid || '-');
+      if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
+      if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
       $('currentStep').textContent = live.current_step_id || '-';
       $('runnerState').textContent = live.status || '-';
       $('completedSteps').textContent = live.completed_steps ?? 0;

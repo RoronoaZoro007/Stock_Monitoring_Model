@@ -122,6 +122,7 @@ export TUSHARE_PROXY_URL='http://tsy.xiaodefa.cn'
 - 模式2：真实时间点模式。按北京时间节点等待执行，适合当天 paper tracking。
 - `TUSHARE_TOKEN`、`WXPUSHER_APP_TOKEN` 和 WxPusher Topic/GroupId 可以在页面临时输入；留空则使用本机环境变量。页面输入只注入本次任务进程，不写入文件。
 - 如果任务失败，页面会显示失败状态、返回码和最近错误日志，便于定位。
+- 重复跑同一交易日时，可以勾选 `run_id 输出目录` 隔离本次产物，或勾选 `保留本次 run 快照` 把关键 CSV/JSON/日志复制到快照目录；`强制重新下载分钟线` 会重新请求分钟 bar 并按 `ts_code + trade_time` 覆盖去重。
 
 指定交易日：
 
