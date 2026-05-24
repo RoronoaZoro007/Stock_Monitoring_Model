@@ -582,21 +582,37 @@ def summarize_by_strategy(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     return sorted(out, key=lambda x: x["strategy_id"])
 
 
-def synthesize_step_progress(status_doc: dict[str, Any], completed_rows: list[dict[str, str]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def synthesize_step_progress(
+    status_doc: dict[str, Any],
+    completed_rows: list[dict[str, str]],
+    plan_hint: str = "auto",
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     completed_by_step: dict[str, dict[str, str]] = {}
     extra_rows: list[dict[str, str]] = []
     current_step = str(status_doc.get("current_step_id") or "")
     optional_ids = {step_id for step_id, _ in OPTIONAL_PRIOR_STEP_PLAN}
     optional_by_id = {step_id: (step_id, scheduled) for step_id, scheduled in OPTIONAL_PRIOR_STEP_PLAN}
     completed_ids = {row.get("step_id", "") for row in completed_rows}
-    use_prior_plan = bool(optional_ids.intersection(completed_ids) or current_step in optional_ids)
-    if use_prior_plan:
+    prior_seed_plan = [optional_by_id["seed_prior_artifacts"]]
+    prior_rebuild_plan = [
+        item
+        for item in OPTIONAL_PRIOR_STEP_PLAN
+        if item[0] not in {"seed_prior_artifacts", "prior_reconstruction_skipped"}
+    ]
+    use_prior_plan = bool(optional_ids.intersection(completed_ids) or current_step in optional_ids or plan_hint in {"seed", "rebuild"})
+    if plan_hint == "seed":
+        plan = [DEFAULT_STEP_PLAN[0], *prior_seed_plan, *DEFAULT_STEP_PLAN[1:]]
+    elif plan_hint == "rebuild":
+        plan = [DEFAULT_STEP_PLAN[0], *prior_rebuild_plan, *DEFAULT_STEP_PLAN[1:]]
+    elif use_prior_plan:
         if "prior_reconstruction_skipped" in completed_ids or current_step == "prior_reconstruction_skipped":
             active_prior_plan = [optional_by_id["prior_reconstruction_skipped"]]
         elif "seed_prior_artifacts" in completed_ids and not any(step.startswith("prior_") for step in completed_ids):
-            active_prior_plan = [optional_by_id["seed_prior_artifacts"]]
+            active_prior_plan = prior_seed_plan
+        elif "seed_prior_artifacts" in completed_ids:
+            active_prior_plan = [*prior_seed_plan, *prior_rebuild_plan]
         else:
-            active_prior_plan = [item for item in OPTIONAL_PRIOR_STEP_PLAN if item[0] != "prior_reconstruction_skipped"]
+            active_prior_plan = prior_rebuild_plan
         plan = [DEFAULT_STEP_PLAN[0], *active_prior_plan, *DEFAULT_STEP_PLAN[1:]]
     else:
         plan = DEFAULT_STEP_PLAN
@@ -848,7 +864,7 @@ def load_today_context(output_root: Path, trade_date: str) -> dict[str, Any]:
     }
 
 
-def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Path | None = None) -> dict[str, Any]:
+def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Path | None = None, plan_hint: str = "auto") -> dict[str, Any]:
     live_dir = output_root / "live_runner"
     status_path = live_dir / f"{trade_date}_live_runner_status.json"
     steps_path = live_dir / f"{trade_date}_live_runner_steps.csv"
@@ -858,7 +874,7 @@ def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Pa
 
     status_doc = read_json(status_path)
     steps = read_csv_rows(steps_path, max_rows=120)
-    step_progress, progress = synthesize_step_progress(status_doc, steps)
+    step_progress, progress = synthesize_step_progress(status_doc, steps, plan_hint=plan_hint)
     candidates = [r for r in read_csv_rows(candidate_path, max_rows=10000) if str(r.get("trade_date", "")) == trade_date]
     signals = read_csv_rows(signals_path, max_rows=1000)
     entries = read_csv_rows(entry_path, max_rows=1000)
@@ -1050,6 +1066,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .status-chip.success {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .status-chip.running {{ background: #eff8ff; color: #175cd3; border-color: #b2ddff; }}
     .status-chip.waiting {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
+    .status-chip.pending {{ background: #f2f4f7; color: #475467; border-color: #d0d5dd; }}
+    .status-chip.skipped {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
     .status-chip.failed {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
     pre {{
       white-space: pre-wrap;
@@ -1388,6 +1406,11 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       const seconds = Math.round(n % 60);
       return minutes + 'm ' + seconds + 's';
     }}
+    function compactText(v, maxLen=110) {{
+      const text = String(v ?? '').replace(/\\s+/g, ' ').trim();
+      if (!text) return '-';
+      return text.length > maxLen ? text.slice(0, maxLen - 1) + '...' : text;
+    }}
     function isTrue(v) {{
       return String(v ?? '').toLowerCase() === 'true' || String(v ?? '') === '1';
     }}
@@ -1401,6 +1424,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       if (type === 'weight' || lower === 'weight') return fmtWeight(value);
       if (type === 'seconds') return fmtDuration(value);
       if (type === 'status') return '<span class="status-chip ' + esc(String(value || 'pending')) + '">' + esc(value || 'pending') + '</span>';
+      if (type === 'message') return esc(compactText(value));
       if (type === 'number') return fmtNumber(value, col.digits || 0);
       return esc(value === undefined || value === null || value === '' ? '-' : value);
     }}
@@ -1484,7 +1508,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     function stepDescription(step) {{
       const map = {{
         prepare_baseline: '检查交易日历、股票池、T-1 日线与基础数据',
-        seed_prior_artifacts: '校验并复用已冻结 T-1 信号和入场文件',
+        seed_prior_artifacts: '检查 T-1 冻结信号/入场文件',
         prior_reconstruction_skipped: '前一交易日纸面买入记录已存在，跳过重建',
         prior_auction_guard: '补齐前一交易日集合竞价侧数据',
         prior_fetch_until_1430: '补齐前一交易日 14:30 前分钟线',
@@ -1665,14 +1689,19 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('todayBuyTable').innerHTML = table(today.buy_signals || [], [
         {{key:'line', label:'线路'}}, {{key:'rank', label:'rank', type:'number'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'score', label:'score', type:'score'}}, {{key:'expected_entry_time', label:'建议买入'}}, {{key:'entry_vwap', label:'买入VWAP', type:'price'}}, {{key:'entry_status', label:'状态'}}, {{key:'weight', label:'权重', type:'weight'}}
       ]);
-      $('stepsTable').innerHTML = table(artifacts.steps || [], [
+      const stepRows = (artifacts.steps || []).map(r => Object.assign({{}}, r, {{
+        step_description: stepDescription(r.step_id || '')
+      }}));
+      $('stepsTable').innerHTML = table(stepRows, [
         {{key:'index', label:'#', type:'number'}},
-        {{key:'step_id', label:'step'}},
         {{key:'scheduled_time', label:'scheduled'}},
         {{key:'status', label:'status', type:'status'}},
+        {{key:'step_description', label:'任务说明'}},
+        {{key:'step_id', label:'step_id'}},
         {{key:'running_elapsed_seconds', label:'running', type:'seconds'}},
         {{key:'duration_seconds', label:'finished', type:'seconds'}},
-        {{key:'return_code', label:'rc', type:'number'}}
+        {{key:'return_code', label:'rc', type:'number'}},
+        {{key:'message', label:'校验摘要/说明', type:'message'}}
       ]);
       const files = Object.entries(artifacts.files || {{}}).map(([name, path]) => ({{name, path, exists: artifacts.file_exists?.[name] ? 'yes' : 'no'}}));
       $('filesTable').innerHTML = table(files, ['name','exists','path']);
@@ -1690,6 +1719,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         params.set('trade_date', dateToYmd($('tradeDate').value));
         params.set('output_root', $('outputRoot').value);
         params.set('data_source_mode', $('dataSourceMode').value);
+        params.set('prior_input_policy', $('priorInputPolicy').value);
         if ($('dataSourceMode').value === 'rerun_clean' && activeRunJobId) params.set('active_job_id', activeRunJobId);
         const resp = await fetch('/api/status?' + params.toString());
         render(await resp.json());
@@ -1728,6 +1758,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       }}
       refresh();
     }});
+    $('priorInputPolicy').addEventListener('change', refresh);
     refresh();
     setInterval(refresh, 3000);
   </script>
@@ -1771,9 +1802,13 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                 if data_source_mode not in {"history", "latest_run", "rerun_clean"}:
                     data_source_mode = "history"
                 active_job_id = str((params.get("active_job_id") or [""])[0] or "")
+                prior_input_policy = str((params.get("prior_input_policy") or ["reuse_or_rebuild"])[0] or "reuse_or_rebuild")
+                if prior_input_policy not in {"reuse_or_rebuild", "reuse_only", "force_rebuild"}:
+                    prior_input_policy = "reuse_or_rebuild"
                 display_trade_date = trade_date
                 display_output_root = base_output_root
                 prior_entry_root: Path | None = None
+                plan_hint = "auto"
                 display_source = "history"
                 display_note = "展示所选日期在当前输出目录下已有的历史结果。"
                 display_run_id = ""
@@ -1788,6 +1823,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                 elif data_source_mode == "rerun_clean":
                     ctx = current_job_context(base_output_root, public, trade_date=trade_date, active_job_id=active_job_id)
                     prior_entry_root = base_output_root
+                    plan_hint = "rebuild" if prior_input_policy == "force_rebuild" else "seed"
                     if ctx:
                         display_output_root = Path(ctx["output_root"])
                         display_source = str(ctx.get("source") or "rerun_clean_run")
@@ -1807,6 +1843,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     "display_run_id": display_run_id,
                     "display_note": display_note,
                     "data_source_mode": data_source_mode,
+                    "prior_input_policy": prior_input_policy,
                     "min_trade_date": MIN_TRADE_DATE,
                     "beijing_now": bj_now().isoformat(timespec="seconds"),
                     "git": {
@@ -1816,7 +1853,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     },
                     "env": env_health(send_notifications=True),
                     "job": public,
-                    "artifacts": dashboard_artifacts(display_output_root, display_trade_date, prior_entry_root=prior_entry_root),
+                    "artifacts": dashboard_artifacts(display_output_root, display_trade_date, prior_entry_root=prior_entry_root, plan_hint=plan_hint),
                 }
                 write_json_response(self, HTTPStatus.OK, payload)
                 return
