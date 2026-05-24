@@ -715,6 +715,25 @@ def select_columns(rows: list[dict[str, str]], cols: list[str], limit: int = 80)
     return out
 
 
+def enrich_with_signal_rank_score(rows: list[dict[str, str]], signal_rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    signal_by_key: dict[tuple[str, str], dict[str, str]] = {}
+    for signal in signal_rows:
+        key = (signal.get("strategy_id", ""), signal.get("code", ""))
+        if key[0] and key[1]:
+            signal_by_key[key] = signal
+    enriched: list[dict[str, str]] = []
+    for row in rows:
+        item = dict(row)
+        signal = signal_by_key.get((row.get("strategy_id", ""), row.get("code", "")), {})
+        if signal:
+            item.setdefault("original_v7_rank", signal.get("original_v7_rank", ""))
+            item.setdefault("score", signal.get("score", ""))
+            item.setdefault("in_u2", signal.get("in_u2", ""))
+            item.setdefault("tail_down_flag", signal.get("tail_down_flag", ""))
+        enriched.append(item)
+    return enriched
+
+
 def load_prior_context(output_root: Path, trade_date: str, prior_entry_root: Path | None = None) -> dict[str, Any]:
     entry_root = prior_entry_root or output_root
     prior = infer_prior_signal_date(entry_root, trade_date)
@@ -732,10 +751,16 @@ def load_prior_context(output_root: Path, trade_date: str, prior_entry_root: Pat
     rec_path = output_root / "daily_exit_recommendations" / f"{prior}_{trade_date}_exit_recommendations.csv"
     exec_path = output_root / "daily_exit_execution" / f"{prior}_{trade_date}_exit_execution.csv"
     settle_path = output_root / "daily_exit_settlement" / f"{prior}_{trade_date}_exit_settlement.csv"
+    signals_path = entry_root / "daily_signals" / f"{prior}_signals.csv"
+    signal_rows = read_csv_rows(signals_path, max_rows=2000)
     entry_rows = read_csv_rows(entry_path, max_rows=1000)
     rec_rows = read_csv_rows(rec_path, max_rows=1000)
     exec_rows = read_csv_rows(exec_path, max_rows=1000)
     settle_rows = read_csv_rows(settle_path, max_rows=1000)
+    entry_rows = enrich_with_signal_rank_score(entry_rows, signal_rows)
+    rec_rows = enrich_with_signal_rank_score(rec_rows, signal_rows)
+    exec_rows = enrich_with_signal_rank_score(exec_rows, signal_rows)
+    settle_rows = enrich_with_signal_rank_score(settle_rows, signal_rows)
     summary: list[dict[str, Any]] = []
     if settle_rows:
         grouped: dict[str, dict[str, Any]] = {}
@@ -761,8 +786,8 @@ def load_prior_context(output_root: Path, trade_date: str, prior_entry_root: Pat
         "status": "available" if entry_rows else "missing_entry_file",
         "message": "" if entry_rows else f"未找到 {prior} 的纸面入场文件。",
         "entries": select_columns(entry_rows, ["line", "strategy_id", "code", "name", "original_v7_rank", "score", "expected_entry_time", "entry_vwap", "weight", "paper_entry_status"], limit=80),
-        "sell_recommendations": select_columns(rec_rows, ["line", "checkpoint", "decision_time", "expected_exit_time", "strategy_id", "code", "name", "entry_vwap", "recommended_sell_price", "exit_reason", "recommendation_status"], limit=120),
-        "sell_execution": select_columns(exec_rows, ["line", "actual_exit_time", "strategy_id", "code", "name", "entry_vwap", "exit_vwap", "exit_reason", "return_5bp", "return_10bp_impact", "paper_exit_status"], limit=120),
+        "sell_recommendations": select_columns(rec_rows, ["line", "checkpoint", "decision_time", "expected_exit_time", "strategy_id", "code", "name", "original_v7_rank", "score", "entry_vwap", "recommended_sell_price", "exit_reason", "recommendation_status"], limit=120),
+        "sell_execution": select_columns(exec_rows, ["line", "actual_exit_time", "strategy_id", "code", "name", "original_v7_rank", "score", "entry_vwap", "exit_vwap", "exit_reason", "return_5bp", "return_10bp_impact", "paper_exit_status"], limit=120),
         "settlement_summary": summary,
         "files": {
             "prior_entry": str(entry_path),
@@ -1421,6 +1446,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
             exit_time: time,
             code: r.code || '',
             name: r.name || '',
+            rank: r.original_v7_rank || '',
+            score: r.score || '',
             sell_price: price,
             exit_reason: r.exit_reason || '',
             status: r.recommendation_status || r.paper_exit_status || ''
@@ -1428,6 +1455,9 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         }}
         const item = map.get(key);
         if (r.line && !item.lines.includes(r.line)) item.lines.push(r.line);
+        const oldScore = asNumber(item.score);
+        const newScore = asNumber(r.score);
+        if (newScore !== null && (oldScore === null || newScore > oldScore)) item.score = r.score;
       }}
       return Array.from(map.values());
     }}
@@ -1565,6 +1595,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('sellActionTable').innerHTML = table(compactSell, [
         {{key:'lines', label:'线路', type:'lines'}},
         {{key:'exit_time', label:'建议/实际卖出'}},
+        {{key:'rank', label:'rank', type:'number'}},
+        {{key:'score', label:'score', type:'score'}},
         {{key:'code', label:'股票'}},
         {{key:'name', label:'名称'}},
         {{key:'sell_price', label:'推荐/执行价', type:'price'}},
@@ -1594,13 +1626,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         ? ('T-1 signal_date: ' + prior.prior_signal_date + (prior.message ? '；' + prior.message : ''))
         : (prior.message || '未找到前一交易日纸面选股信息。');
       $('priorEntriesTable').innerHTML = table(prior.entries || [], [
-        {{key:'line', label:'线路'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'original_v7_rank', label:'rank', type:'number'}}, {{key:'entry_vwap', label:'买入VWAP', type:'price'}}, {{key:'weight', label:'权重', type:'weight'}}, {{key:'paper_entry_status', label:'状态'}}
+        {{key:'line', label:'线路'}}, {{key:'original_v7_rank', label:'rank', type:'number'}}, {{key:'score', label:'score', type:'score'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'entry_vwap', label:'买入VWAP', type:'price'}}, {{key:'weight', label:'权重', type:'weight'}}, {{key:'paper_entry_status', label:'状态'}}
       ]);
       $('sellRecommendationsTable').innerHTML = table(prior.sell_recommendations || [], [
-        {{key:'line', label:'线路'}}, {{key:'decision_time', label:'判断'}}, {{key:'expected_exit_time', label:'建议卖出'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'recommended_sell_price', label:'推荐卖价', type:'price'}}, {{key:'exit_reason', label:'原因'}}, {{key:'recommendation_status', label:'状态'}}
+        {{key:'line', label:'线路'}}, {{key:'decision_time', label:'判断'}}, {{key:'expected_exit_time', label:'建议卖出'}}, {{key:'original_v7_rank', label:'rank', type:'number'}}, {{key:'score', label:'score', type:'score'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'recommended_sell_price', label:'推荐卖价', type:'price'}}, {{key:'exit_reason', label:'原因'}}, {{key:'recommendation_status', label:'状态'}}
       ]);
       $('sellExecutionTable').innerHTML = table(prior.sell_execution || [], [
-        {{key:'line', label:'线路'}}, {{key:'actual_exit_time', label:'卖出时间'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'entry_vwap', label:'买入', type:'price'}}, {{key:'exit_vwap', label:'卖出', type:'price'}}, {{key:'return_10bp_impact', label:'10bp+impact', type:'pct'}}, {{key:'paper_exit_status', label:'状态'}}
+        {{key:'line', label:'线路'}}, {{key:'actual_exit_time', label:'卖出时间'}}, {{key:'original_v7_rank', label:'rank', type:'number'}}, {{key:'score', label:'score', type:'score'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'entry_vwap', label:'买入', type:'price'}}, {{key:'exit_vwap', label:'卖出', type:'price'}}, {{key:'return_10bp_impact', label:'10bp+impact', type:'pct'}}, {{key:'paper_exit_status', label:'状态'}}
       ]);
       $('settlementSummaryTable').innerHTML = table(prior.settlement_summary || [], [
         {{key:'line', label:'线路'}}, {{key:'positions', label:'笔数', type:'number'}}, {{key:'daily_return_5bp', label:'5bp日收益', type:'pct'}}, {{key:'daily_return_10bp_impact', label:'10bp+impact日收益', type:'pct'}}
