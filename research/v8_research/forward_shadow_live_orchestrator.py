@@ -202,9 +202,49 @@ def entry_summary(output_root: Path, trade_date: str) -> str:
     return "## Entry 记录\n\n" + "\n".join([f"- {k}: {v}" for k, v in counts.items()])
 
 
-def reconstruct_prior_if_needed(args: argparse.Namespace, prior: str, prior2: str, results: list[StepResult]) -> None:
+def write_live_status(
+    output_root: Path,
+    trade_date: str,
+    status: str,
+    current_step_id: str = "",
+    scheduled_time: str = "",
+    completed_steps: int = 0,
+    total_steps: int | None = None,
+    message: str = "",
+    no_wait: bool = False,
+) -> Path:
+    out_dir = output_root / "live_runner"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{trade_date}_live_runner_status.json"
+    payload = {
+        "trade_date": trade_date,
+        "status": status,
+        "current_step_id": current_step_id,
+        "current_scheduled_time": scheduled_time,
+        "completed_steps": completed_steps,
+        "total_steps": total_steps,
+        "message": message,
+        "no_wait": bool(no_wait),
+        "updated_at_beijing": bj_now().isoformat(timespec="seconds"),
+    }
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+
+def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior: str, prior2: str, results: list[StepResult]) -> None:
     output_root = Path(args.output_root)
     if entry_file_ready(output_root, prior):
+        write_live_status(
+            output_root,
+            trade_date,
+            "running",
+            current_step_id="prior_reconstruction_skipped",
+            completed_steps=len(results),
+            message=f"{prior} prior entry file already exists; reconstruction skipped.",
+            no_wait=bool(args.no_wait),
+        )
         send_wxpusher(
             f"FS prior {prior} entry ready",
             f"# Forward Shadow\n\n{prior} prior entry file already exists; reconstruction skipped.\n\npaper-only。",
@@ -268,8 +308,29 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, prior: str, prior2: st
         ]
     )
     for step_id, scheduled, cmd in steps:
+        write_live_status(
+            output_root,
+            trade_date,
+            "running",
+            current_step_id=step_id,
+            scheduled_time=scheduled,
+            completed_steps=len(results),
+            message=f"Preparing prior entry state for {prior}.",
+            no_wait=bool(args.no_wait),
+        )
         result = run_cmd(step_id, scheduled, cmd, bool(args.send_notifications), int(args.topic_id))
         results.append(result)
+        write_results(results, output_root, trade_date)
+        write_live_status(
+            output_root,
+            trade_date,
+            "running",
+            current_step_id=step_id,
+            scheduled_time=scheduled,
+            completed_steps=len(results),
+            message=f"Completed prior reconstruction step {step_id}.",
+            no_wait=bool(args.no_wait),
+        )
     send_wxpusher(
         f"FS prior {prior} reconstruction completed",
         f"# Forward Shadow prior reconstruction\n\n{prior} entry is prepared.\n\n{route_summary(output_root, prior)}\n\n{entry_summary(output_root, prior)}",
@@ -417,6 +478,16 @@ def main() -> None:
     output_root = Path(args.output_root)
     output_root.mkdir(parents=True, exist_ok=True)
     results: list[StepResult] = []
+    write_live_status(
+        output_root,
+        trade_date,
+        "running",
+        current_step_id="prepare_baseline",
+        scheduled_time="07:30:00",
+        completed_steps=0,
+        message="Starting forward shadow paper-only runner.",
+        no_wait=bool(args.no_wait),
+    )
 
     prepare_cmd = python_cmd(
         "research/v8_research/prepare_forward_shadow_baseline.py",
@@ -435,13 +506,24 @@ def main() -> None:
         prepare_cmd.append("--skip-moneyflow")
     prepare = run_cmd("prepare_baseline", "07:30:00", prepare_cmd, bool(args.send_notifications), int(args.topic_id))
     results.append(prepare)
+    write_results(results, output_root, trade_date)
+    write_live_status(
+        output_root,
+        trade_date,
+        "running",
+        current_step_id="prepare_baseline",
+        scheduled_time="07:30:00",
+        completed_steps=len(results),
+        message="Baseline preparation completed.",
+        no_wait=bool(args.no_wait),
+    )
     summary = parse_prepare_summary(prepare.stdout_tail)
     prior = str(summary.get("prior_trade_date") or "")
     prior2 = str(summary.get("prior2_trade_date") or "")
     if not prior or not prior2:
         raise SystemExit("prepare_baseline did not return prior trade dates")
 
-    reconstruct_prior_if_needed(args, prior, prior2, results)
+    reconstruct_prior_if_needed(args, trade_date, prior, prior2, results)
 
     scheduled_steps: list[tuple[str, str, list[str], str]] = [
         (
@@ -505,8 +587,31 @@ def main() -> None:
         ]
     )
 
+    total_steps = len(results) + len(scheduled_steps)
     for step_id, hms, cmd, extra_kind in scheduled_steps:
+        write_live_status(
+            output_root,
+            trade_date,
+            "waiting" if not args.no_wait else "running",
+            current_step_id=step_id,
+            scheduled_time=hms,
+            completed_steps=len(results),
+            total_steps=total_steps,
+            message=f"Waiting for {hms} Beijing time." if not args.no_wait else "No-wait mode: executing scheduled step immediately.",
+            no_wait=bool(args.no_wait),
+        )
         wait_until(hms, bool(args.no_wait))
+        write_live_status(
+            output_root,
+            trade_date,
+            "running",
+            current_step_id=step_id,
+            scheduled_time=hms,
+            completed_steps=len(results),
+            total_steps=total_steps,
+            message=f"Running step {step_id}.",
+            no_wait=bool(args.no_wait),
+        )
         extra = ""
         if extra_kind == "routes":
             extra = route_summary(output_root, trade_date)
@@ -514,12 +619,33 @@ def main() -> None:
             extra = entry_summary(output_root, trade_date)
         result = run_cmd(step_id, hms, cmd, bool(args.send_notifications), int(args.topic_id), extra_summary=extra)
         results.append(result)
+        write_results(results, output_root, trade_date)
+        write_live_status(
+            output_root,
+            trade_date,
+            "running",
+            current_step_id=step_id,
+            scheduled_time=hms,
+            completed_steps=len(results),
+            total_steps=total_steps,
+            message=f"Completed step {step_id}.",
+            no_wait=bool(args.no_wait),
+        )
         if extra_kind == "routes":
             send_wxpusher(f"FS {trade_date} frozen routes", f"# Forward Shadow {trade_date}\n\n{route_summary(output_root, trade_date)}\n\npaper-only。", args.topic_id, bool(args.send_notifications))
         if extra_kind == "entry":
             send_wxpusher(f"FS {trade_date} entry recorded", f"# Forward Shadow {trade_date}\n\n{entry_summary(output_root, trade_date)}\n\npaper-only。", args.topic_id, bool(args.send_notifications))
 
     path = write_results(results, output_root, trade_date)
+    write_live_status(
+        output_root,
+        trade_date,
+        "completed",
+        completed_steps=len(results),
+        total_steps=len(results),
+        message=f"Live paper tracking completed. Steps file: {path}",
+        no_wait=bool(args.no_wait),
+    )
     send_wxpusher(
         f"FS {trade_date} live paper tracking completed",
         f"# Forward Shadow {trade_date}\n\nLive paper tracking completed.\n\n- steps: `{path}`\n\n{route_summary(output_root, trade_date)}\n\n{entry_summary(output_root, trade_date)}\n\npaper-only，不下单。",

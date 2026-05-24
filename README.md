@@ -110,6 +110,17 @@ export TUSHARE_PROXY_URL='http://tsy.xiaodefa.cn'
 ./scripts/run_forward_shadow_live.sh
 ```
 
+本地可视化控制台：
+
+```bash
+./scripts/run_forward_shadow_dashboard.sh
+```
+
+打开 `http://127.0.0.1:8788/` 后可以选择执行日期和执行模式：
+
+- 模式1：模拟时间点快跑。仍调用真实数据接口和真实处理流程，但不等待 09:25/14:50 等墙上时间，适合历史漏跑补跑。
+- 模式2：真实时间点模式。按北京时间节点等待执行，适合当天 paper tracking。
+
 指定交易日：
 
 ```bash
