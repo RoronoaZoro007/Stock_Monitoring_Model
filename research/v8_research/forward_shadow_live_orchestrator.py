@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -203,6 +204,107 @@ def entry_file_ready(output_root: Path, trade_date: str) -> bool:
     return bool(df["paper_entry_status"].astype(str).eq("entry_recorded").any())
 
 
+def validate_prior_seed(seed_root: Path, prior: str) -> tuple[bool, str, dict[str, Path]]:
+    signals_path = seed_root / "daily_signals" / f"{prior}_signals.csv"
+    entry_path = seed_root / "daily_entry_prices" / f"{prior}_entry_prices.csv"
+    paths = {"signals": signals_path, "entry": entry_path}
+    missing = [name for name, path in paths.items() if not path.exists()]
+    if missing:
+        return False, "missing prior seed files: " + ", ".join(missing), paths
+    try:
+        signals = pd.read_csv(signals_path, dtype={"code": str, "strategy_id": str})
+        entries = pd.read_csv(entry_path, dtype={"code": str, "strategy_id": str, "line_id": str})
+    except Exception as exc:
+        return False, f"failed to read prior seed files: {exc!r}", paths
+    if signals.empty or entries.empty:
+        return False, f"empty prior seed files: signals={len(signals)}, entries={len(entries)}", paths
+    signal_required = {"strategy_id", "code", "original_v7_rank", "score", "final_selected_flag"}
+    missing_signal_cols = sorted(signal_required - set(signals.columns))
+    if missing_signal_cols:
+        return False, "signals missing columns: " + ", ".join(missing_signal_cols), paths
+    entry_required_any = {"strategy_id", "line_id"}
+    entry_required = {"code", "entry_vwap", "paper_entry_status"}
+    missing_entry_cols = sorted(entry_required - set(entries.columns))
+    if not entry_required_any.intersection(entries.columns):
+        missing_entry_cols.append("strategy_id_or_line_id")
+    if missing_entry_cols:
+        return False, "entry missing columns: " + ", ".join(missing_entry_cols), paths
+    if "trade_date" in signals.columns and not signals["trade_date"].astype(str).eq(prior).all():
+        return False, f"signals trade_date column contains values other than {prior}", paths
+    if "trade_date" in entries.columns and not entries["trade_date"].astype(str).eq(prior).all():
+        return False, f"entry trade_date column contains values other than {prior}", paths
+    entries["entry_vwap"] = pd.to_numeric(entries["entry_vwap"], errors="coerce")
+    recorded = entries["paper_entry_status"].astype(str).eq("entry_recorded")
+    if not bool((recorded & entries["entry_vwap"].notna()).any()):
+        return False, "entry has no entry_recorded rows with valid entry_vwap", paths
+    entry_strategy_col = "strategy_id" if "strategy_id" in entries.columns else "line_id"
+    signal_keys = set(zip(signals["strategy_id"].astype(str), signals["code"].astype(str)))
+    entry_keys = set(zip(entries[entry_strategy_col].astype(str), entries["code"].astype(str)))
+    missing_keys = sorted(entry_keys - signal_keys)
+    if missing_keys:
+        sample = ", ".join([f"{sid}:{code}" for sid, code in missing_keys[:5]])
+        return False, f"entry rows missing from signals by strategy_id+code: {sample}", paths
+    return True, f"prior seed validated: signals={len(signals)}, entries={len(entries)}", paths
+
+
+def copy_prior_seed_files(seed_root: Path, output_root: Path, prior: str, paths: dict[str, Path]) -> None:
+    for src in [paths["signals"], paths["entry"]]:
+        dst = output_root / src.relative_to(seed_root)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.resolve() == dst.resolve():
+            continue
+        shutil.copy2(src, dst)
+
+
+def seed_prior_artifacts_if_configured(args: argparse.Namespace, trade_date: str, prior: str, results: list[StepResult]) -> bool:
+    policy = str(args.prior_input_policy)
+    output_root = Path(args.output_root)
+    if policy == "force_rebuild":
+        return False
+    if entry_file_ready(output_root, prior):
+        return True
+    started = time.monotonic()
+    seed_root = Path(args.prior_seed_root) if args.prior_seed_root else output_root
+    ok, message, paths = validate_prior_seed(seed_root, prior)
+    status = "success" if ok else "skipped"
+    return_code = 0
+    if ok:
+        copy_prior_seed_files(seed_root, output_root, prior, paths)
+        message = f"{message}; copied frozen T-1 artifacts from {seed_root} to {output_root}."
+    elif policy == "reuse_only":
+        status = "failed"
+        return_code = 1
+        message = f"{message}; prior_input_policy=reuse_only forbids reconstruction."
+    else:
+        message = f"{message}; fallback to T-1 reconstruction."
+    result = StepResult(
+        step_id="seed_prior_artifacts",
+        scheduled_time="07:35:00",
+        status=status,
+        duration_seconds=round(time.monotonic() - started, 3),
+        return_code=return_code,
+        stdout_tail=message,
+        stderr_tail="" if return_code == 0 else message,
+        command=[],
+        message=message,
+    )
+    results.append(result)
+    write_results(results, output_root, trade_date)
+    write_live_status(
+        output_root,
+        trade_date,
+        "running" if return_code == 0 else "failed",
+        current_step_id="seed_prior_artifacts",
+        scheduled_time="07:35:00",
+        completed_steps=len(results),
+        message=message,
+        no_wait=bool(args.no_wait),
+    )
+    if return_code != 0:
+        raise SystemExit(json.dumps(asdict(result), ensure_ascii=False, indent=2))
+    return ok
+
+
 def route_summary(output_root: Path, trade_date: str) -> str:
     path = output_root / "forward_shadow_candidate_status.csv"
     if not path.exists():
@@ -326,6 +428,7 @@ def write_live_status(
 
 def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior: str, prior2: str, results: list[StepResult]) -> None:
     output_root = Path(args.output_root)
+    seed_prior_artifacts_if_configured(args, trade_date, prior, results)
     if entry_file_ready(output_root, prior):
         write_live_status(
             output_root,
@@ -577,6 +680,17 @@ def main() -> None:
     parser.add_argument("--lookback-trading-days", type=int, default=90)
     parser.add_argument("--skip-moneyflow", action="store_true")
     parser.add_argument("--force-refresh-minutes", action="store_true", help="Re-request minute bars even when local bars already exist; output remains deduped.")
+    parser.add_argument(
+        "--prior-input-policy",
+        choices=["reuse_or_rebuild", "reuse_only", "force_rebuild"],
+        default="reuse_or_rebuild",
+        help="How to handle frozen T-1 paper entry artifacts before settlement monitoring.",
+    )
+    parser.add_argument(
+        "--prior-seed-root",
+        default="",
+        help="Root containing frozen T-1 daily_signals and daily_entry_prices to copy into the current output root.",
+    )
     parser.add_argument(
         "--notification-policy",
         choices=["all_steps", "key_events", "trade_only", "failures_only", "none"],

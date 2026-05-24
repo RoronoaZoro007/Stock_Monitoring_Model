@@ -59,6 +59,7 @@ DEFAULT_STEP_PLAN: list[tuple[str, str]] = [
     ("fetch_tail_1500_bar", "15:00:05"),
 ]
 OPTIONAL_PRIOR_STEP_PLAN: list[tuple[str, str]] = [
+    ("seed_prior_artifacts", "07:35:00"),
     ("prior_reconstruction_skipped", "07:35:00"),
     ("prior_auction_guard", "07:40:00"),
     ("prior_fetch_until_1430", "07:41:00"),
@@ -234,6 +235,9 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     preserve_snapshot = bool(payload.get("preserve_run_snapshot", False))
     use_run_id_output_dir = bool(payload.get("use_run_id_output_dir", False))
     force_refresh_minutes = bool(payload.get("force_refresh_minutes", False))
+    prior_input_policy = str(payload.get("prior_input_policy") or "reuse_or_rebuild")
+    if prior_input_policy not in {"reuse_or_rebuild", "reuse_only", "force_rebuild"}:
+        raise ValueError("prior_input_policy must be reuse_or_rebuild, reuse_only, or force_rebuild")
     job_id = safe_label(str(payload.get("_job_id") or uuid.uuid4().hex[:12]))
     requested_run_id = safe_label(str(payload.get("run_id") or ""))
     run_id = requested_run_id or safe_label(f"{trade_date}_{bj_now().strftime('%H%M%S')}_{job_id}")
@@ -272,6 +276,10 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         str(topic_id),
         "--notification-policy",
         notification_policy,
+        "--prior-input-policy",
+        prior_input_policy,
+        "--prior-seed-root",
+        str(base_output_root),
     ]
     if effective_notifications:
         cmd.append("--send-notifications")
@@ -302,6 +310,7 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         "topic_id": topic_id,
         "notification_policy": notification_policy,
         "skip_moneyflow": skip_moneyflow,
+        "prior_input_policy": prior_input_policy,
         "credential_source": {
             "tushare_token": "page_input" if page_tushare_token else "environment",
             "wxpusher_app_token": "page_input" if page_wxpusher_token else "environment",
@@ -578,11 +587,14 @@ def synthesize_step_progress(status_doc: dict[str, Any], completed_rows: list[di
     extra_rows: list[dict[str, str]] = []
     current_step = str(status_doc.get("current_step_id") or "")
     optional_ids = {step_id for step_id, _ in OPTIONAL_PRIOR_STEP_PLAN}
+    optional_by_id = {step_id: (step_id, scheduled) for step_id, scheduled in OPTIONAL_PRIOR_STEP_PLAN}
     completed_ids = {row.get("step_id", "") for row in completed_rows}
     use_prior_plan = bool(optional_ids.intersection(completed_ids) or current_step in optional_ids)
     if use_prior_plan:
         if "prior_reconstruction_skipped" in completed_ids or current_step == "prior_reconstruction_skipped":
-            active_prior_plan = [OPTIONAL_PRIOR_STEP_PLAN[0]]
+            active_prior_plan = [optional_by_id["prior_reconstruction_skipped"]]
+        elif "seed_prior_artifacts" in completed_ids and not any(step.startswith("prior_") for step in completed_ids):
+            active_prior_plan = [optional_by_id["seed_prior_artifacts"]]
         else:
             active_prior_plan = [item for item in OPTIONAL_PRIOR_STEP_PLAN if item[0] != "prior_reconstruction_skipped"]
         plan = [DEFAULT_STEP_PLAN[0], *active_prior_plan, *DEFAULT_STEP_PLAN[1:]]
@@ -1167,6 +1179,14 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
             <input id="runId" placeholder="留空自动生成">
           </div>
           <div>
+            <label for="priorInputPolicy">T-1 输入策略</label>
+            <select id="priorInputPolicy">
+              <option value="reuse_or_rebuild" selected>复用已冻结 T-1，缺失自动重建</option>
+              <option value="reuse_only">只复用已冻结 T-1，失败中止</option>
+              <option value="force_rebuild">强制重建 T-1</option>
+            </select>
+          </div>
+          <div>
             <label for="topicId">WxPusher Topic / GroupId</label>
             <input id="topicId" type="number" value="{topic_id}">
           </div>
@@ -1193,7 +1213,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
             <label><input id="forceRefreshMinutes" type="checkbox"> 强制重新下载分钟线</label>
           </div>
         </div>
-        <p class="muted">模拟时间点快跑仍走真实接口和真实数据处理，只是不等待墙上时间。run_id 输出目录写入 `输出目录/runs/run_id`；快照复制轻量结果到 `输出目录/run_snapshots/run_id`；强制重新下载分钟线会重新请求分钟 bar 并按时间键覆盖去重。</p>
+        <p class="muted">模拟时间点快跑仍走真实接口和真实数据处理，只是不等待墙上时间。run_id 输出目录写入 `输出目录/runs/run_id`；T-1 默认从输出目录基线复用已冻结的 `daily_signals` 和 `daily_entry_prices`，缺失或校验失败才自动重建；强制重新下载分钟线会重新请求分钟 bar 并按时间键覆盖去重。</p>
       </details>
       <div id="message" class="muted"></div>
     </section>
@@ -1464,6 +1484,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     function stepDescription(step) {{
       const map = {{
         prepare_baseline: '检查交易日历、股票池、T-1 日线与基础数据',
+        seed_prior_artifacts: '校验并复用已冻结 T-1 信号和入场文件',
         prior_reconstruction_skipped: '前一交易日纸面买入记录已存在，跳过重建',
         prior_auction_guard: '补齐前一交易日集合竞价侧数据',
         prior_fetch_until_1430: '补齐前一交易日 14:30 前分钟线',
@@ -1518,6 +1539,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         run_id: $('runId').value.trim(),
         topic_id: Number($('topicId').value || {topic_id}),
         notification_policy: $('notificationPolicy').value,
+        prior_input_policy: $('priorInputPolicy').value,
         send_notifications: $('sendNotifications').checked,
         skip_moneyflow: $('skipMoneyflow').checked,
         use_run_id_output_dir: $('useRunIdOutputDir').checked || dataMode === 'rerun_clean',
