@@ -1,0 +1,898 @@
+{
+  "runtime": {
+    "timezone": "Asia/Shanghai",
+    "paper_only": true,
+    "state_db": "data_tushare/forward_shadow_runtime.sqlite3",
+    "log_dir": "logs/forward_shadow",
+    "output_root": "reports/tushare/v8_forward_shadow",
+    "python": ".venv/bin/python",
+    "poll_seconds": 5,
+    "command_timeout_seconds": 900
+  },
+  "wxpusher": {
+    "enabled": true,
+    "dry_run": true,
+    "endpoint": "https://wxpusher.zjiecode.com/api/send/message",
+    "app_token_env": "WXPUSHER_APP_TOKEN",
+    "topic_ids": [
+      44635
+    ],
+    "content_type": 3,
+    "verify_pay": false
+  },
+  "guards": {
+    "expected_v7_locked_commit": "f688eec575af4667681d87b5b2c1fca72754e399",
+    "target_signal_freeze_time": "14:52:00",
+    "latest_signal_freeze_time": "14:55:00",
+    "max_signal_data_time": "14:50:00",
+    "allow_replay_after_close": false
+  },
+  "paths": {
+    "daily_file": "data_tushare/clean/daily_repaired_top3000.parquet",
+    "default_feature_file": "__forward_feature_file__",
+    "model_file": "locked_artifacts/v7_cap20_strong_label_003/model/model.pkl",
+    "minute_dir": "data_tushare/raw/stk_mins/freq=5min",
+    "auction_raw_dir": "data_tushare/raw"
+  },
+  "commands": {
+    "download_intraday_top3000": {
+      "enabled": false,
+      "description": "Optional live/intraday fetch hook. Enable only after validating provider latency.",
+      "argv": [
+        "{python}",
+        "download_top3000_day.py",
+        "--trade-date",
+        "{trade_date}",
+        "--top-rank",
+        "3000",
+        "--batch-size",
+        "160",
+        "--requests-per-minute",
+        "120",
+        "--skip-daily"
+      ]
+    },
+    "auction_guard_0925": {
+      "enabled": true,
+      "description": "Check/fetch T-1 close auction and T-day open auction before forward scoring.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "auction-guard",
+        "--trade-date",
+        "{trade_date}",
+        "--prior-trade-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--auction-raw-dir",
+        "{auction_raw_dir}",
+        "--top-rank",
+        "3000",
+        "--requests-per-minute",
+        "120"
+      ]
+    },
+    "fetch_exit_0935_bar": {
+      "enabled": true,
+      "description": "Fetch T+1 09:35 5-minute bar for prior-day selected paper positions.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "prior_entries",
+        "--bar-time",
+        "09:35",
+        "--mode",
+        "bar",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_exit_0940_bar": {
+      "enabled": true,
+      "description": "Fetch T+1 09:40 5-minute bar for paper exit VWAP.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "prior_entries",
+        "--bar-time",
+        "09:40",
+        "--mode",
+        "bar",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_exit_0945_bar": {
+      "enabled": true,
+      "description": "Fetch T+1 09:45 5-minute bar for prior-day selected paper positions.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "prior_entries",
+        "--bar-time",
+        "09:45",
+        "--mode",
+        "bar",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_exit_0950_bar": {
+      "enabled": true,
+      "description": "Fetch T+1 09:50 5-minute bar for paper exit VWAP.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "prior_entries",
+        "--bar-time",
+        "09:50",
+        "--mode",
+        "bar",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_exit_1000_bar": {
+      "enabled": true,
+      "description": "Fetch T+1 10:00 5-minute bar for prior-day selected paper positions.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "prior_entries",
+        "--bar-time",
+        "10:00",
+        "--mode",
+        "bar",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_exit_1005_bar": {
+      "enabled": true,
+      "description": "Fetch T+1 10:05 5-minute bar for paper exit VWAP.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "prior_entries",
+        "--bar-time",
+        "10:05",
+        "--mode",
+        "bar",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_exit_1025_bar": {
+      "enabled": true,
+      "description": "Fetch T+1 10:25 5-minute bar for default-exit pre-alert reference.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "prior_entries",
+        "--bar-time",
+        "10:25",
+        "--mode",
+        "bar",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_exit_1030_bar": {
+      "enabled": true,
+      "description": "Fetch T+1 10:30 5-minute bar for default paper exit VWAP.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "prior_entries",
+        "--bar-time",
+        "10:30",
+        "--mode",
+        "bar",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_tail_until_1430": {
+      "enabled": true,
+      "description": "Fetch Top3000 5-minute bars from 09:30 through 14:30 as tail-session catch-up.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "top3000",
+        "--top-rank",
+        "3000",
+        "--bar-time",
+        "14:30",
+        "--mode",
+        "until",
+        "--batch-size",
+        "160",
+        "--requests-per-minute",
+        "120"
+      ]
+    },
+    "fetch_tail_1435_bar": {
+      "enabled": true,
+      "description": "Fetch Top3000 14:35 5-minute bar.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "top3000",
+        "--top-rank",
+        "3000",
+        "--bar-time",
+        "14:35",
+        "--mode",
+        "bar",
+        "--batch-size",
+        "160",
+        "--requests-per-minute",
+        "120",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_tail_1440_bar": {
+      "enabled": true,
+      "description": "Fetch Top3000 14:40 5-minute bar.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "top3000",
+        "--top-rank",
+        "3000",
+        "--bar-time",
+        "14:40",
+        "--mode",
+        "bar",
+        "--batch-size",
+        "160",
+        "--requests-per-minute",
+        "120",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_tail_1445_bar": {
+      "enabled": true,
+      "description": "Fetch Top3000 14:45 5-minute bar.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "top3000",
+        "--top-rank",
+        "3000",
+        "--bar-time",
+        "14:45",
+        "--mode",
+        "bar",
+        "--batch-size",
+        "160",
+        "--requests-per-minute",
+        "120",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_tail_1450_bar": {
+      "enabled": true,
+      "description": "Fetch Top3000 14:50 5-minute bar before locked v7 inference.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "top3000",
+        "--top-rank",
+        "3000",
+        "--bar-time",
+        "14:50",
+        "--mode",
+        "bar",
+        "--batch-size",
+        "160",
+        "--requests-per-minute",
+        "120",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "fetch_tail_1455_bar": {
+      "enabled": true,
+      "description": "Fetch Top3000 14:55 5-minute bar for paper entry VWAP observation.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "minute-fetch",
+        "--trade-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--codes-source",
+        "top3000",
+        "--top-rank",
+        "3000",
+        "--bar-time",
+        "14:55",
+        "--mode",
+        "bar",
+        "--batch-size",
+        "160",
+        "--requests-per-minute",
+        "120",
+        "--retry-until-complete-seconds",
+        "40"
+      ]
+    },
+    "record_entry_1455_vwap": {
+      "enabled": true,
+      "description": "Record frozen route paper entry VWAP from the 14:55 bar for T+1 exit monitoring.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_data_guard.py",
+        "record-entry",
+        "--trade-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}"
+      ]
+    },
+    "build_forward_features": {
+      "enabled": true,
+      "description": "Build one-day forward-only features using <=14:50 data. No labels, no next-day data.",
+      "argv": [
+        "{python}",
+        "research/v8_research/build_forward_shadow_daily_features.py",
+        "--trade-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--auction-raw-dir",
+        "{auction_raw_dir}",
+        "--minute-dir",
+        "{minute_dir}"
+      ]
+    },
+    "build_score_matrix": {
+      "enabled": true,
+      "argv": [
+        "{python}",
+        "research/v8_research/build_forward_shadow_score_matrix.py",
+        "--trade-date",
+        "{trade_date}",
+        "--feature-file",
+        "{feature_file}",
+        "--model-file",
+        "{model_file}",
+        "--output-root",
+        "{output_root}",
+        "--data-max-timestamp",
+        "{trade_date_iso} 14:50:00",
+        "{paper_reconstruction_flag}"
+      ]
+    },
+    "freeze_signals": {
+      "enabled": true,
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_runner.py",
+        "--trade-date",
+        "{trade_date}",
+        "--score-file",
+        "{score_file}",
+        "--daily-file",
+        "{daily_file}",
+        "--output-root",
+        "{output_root}"
+      ]
+    },
+    "settle_prior_trade": {
+      "enabled": true,
+      "argv": [
+        "{python}",
+        "research/v8_research/generate_forward_shadow_daily_report.py",
+        "--trade-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}"
+      ]
+    },
+    "exit_check_0935": {
+      "enabled": true,
+      "description": "T+1 paper exit decision using 09:35 bar. If triggered, recommend 09:40 paper exit.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_exit_monitor.py",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--checkpoint",
+        "check_0935",
+        "--send-notifications"
+      ]
+    },
+    "exit_exec_0940": {
+      "enabled": true,
+      "description": "Record paper VWAP for exits recommended at 09:35.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_exit_monitor.py",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--checkpoint",
+        "exec_0940",
+        "--send-notifications"
+      ]
+    },
+    "exit_check_0945": {
+      "enabled": true,
+      "description": "T+1 paper exit decision using 09:45 bar. If triggered, recommend 09:50 paper exit.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_exit_monitor.py",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--checkpoint",
+        "check_0945",
+        "--send-notifications"
+      ]
+    },
+    "exit_exec_0950": {
+      "enabled": true,
+      "description": "Record paper VWAP for exits recommended at 09:45.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_exit_monitor.py",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--checkpoint",
+        "exec_0950",
+        "--send-notifications"
+      ]
+    },
+    "exit_check_1000": {
+      "enabled": true,
+      "description": "T+1 paper exit decision using 10:00 bar. If triggered, recommend 10:05 paper exit.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_exit_monitor.py",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--checkpoint",
+        "check_1000",
+        "--send-notifications"
+      ]
+    },
+    "exit_exec_1005": {
+      "enabled": true,
+      "description": "Record paper VWAP for exits recommended at 10:00.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_exit_monitor.py",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--checkpoint",
+        "exec_1005",
+        "--send-notifications"
+      ]
+    },
+    "exit_prealert_1025": {
+      "enabled": true,
+      "description": "Paper-only pre-alert for positions that will default-exit at 10:30 if no earlier rule fired.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_exit_monitor.py",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--checkpoint",
+        "prealert_1025",
+        "--send-notifications"
+      ]
+    },
+    "exit_default_1030": {
+      "enabled": true,
+      "description": "Default v7 paper exit for positions not already exited.",
+      "argv": [
+        "{python}",
+        "research/v8_research/forward_shadow_exit_monitor.py",
+        "--signal-date",
+        "{prior_trade_date}",
+        "--settlement-date",
+        "{trade_date}",
+        "--output-root",
+        "{output_root}",
+        "--minute-dir",
+        "{minute_dir}",
+        "--checkpoint",
+        "default_1030",
+        "--send-notifications"
+      ]
+    }
+  },
+  "schedule": [
+    {
+      "checkpoint": "startup_check",
+      "time": "07:20:00",
+      "kind": "internal",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "premarket_check",
+      "time": "07:30:00",
+      "kind": "internal",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "auction_guard_0925",
+      "time": "09:25:30",
+      "kind": "command",
+      "command": "auction_guard_0925",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "fetch_exit_0935_bar",
+      "time": "09:35:05",
+      "kind": "command",
+      "command": "fetch_exit_0935_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "exit_check_0935",
+      "time": "09:35:50",
+      "kind": "command",
+      "command": "exit_check_0935",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_exit_0940_bar",
+      "time": "09:40:05",
+      "kind": "command",
+      "command": "fetch_exit_0940_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "exit_exec_0940",
+      "time": "09:40:50",
+      "kind": "command",
+      "command": "exit_exec_0940",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_exit_0945_bar",
+      "time": "09:45:05",
+      "kind": "command",
+      "command": "fetch_exit_0945_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "exit_check_0945",
+      "time": "09:45:50",
+      "kind": "command",
+      "command": "exit_check_0945",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_exit_0950_bar",
+      "time": "09:50:05",
+      "kind": "command",
+      "command": "fetch_exit_0950_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "exit_exec_0950",
+      "time": "09:50:50",
+      "kind": "command",
+      "command": "exit_exec_0950",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_exit_1000_bar",
+      "time": "10:00:05",
+      "kind": "command",
+      "command": "fetch_exit_1000_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "exit_check_1000",
+      "time": "10:00:50",
+      "kind": "command",
+      "command": "exit_check_1000",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_exit_1005_bar",
+      "time": "10:05:05",
+      "kind": "command",
+      "command": "fetch_exit_1005_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "exit_exec_1005",
+      "time": "10:05:50",
+      "kind": "command",
+      "command": "exit_exec_1005",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_exit_1025_bar",
+      "time": "10:25:05",
+      "kind": "command",
+      "command": "fetch_exit_1025_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "exit_prealert_1025",
+      "time": "10:25:50",
+      "kind": "command",
+      "command": "exit_prealert_1025",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_exit_1030_bar",
+      "time": "10:30:05",
+      "kind": "command",
+      "command": "fetch_exit_1030_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "exit_default_1030",
+      "time": "10:30:50",
+      "kind": "command",
+      "command": "exit_default_1030",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "prior_trade_settlement",
+      "time": "10:35:00",
+      "kind": "command",
+      "command": "settle_prior_trade",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "fetch_tail_until_1430",
+      "time": "14:30:00",
+      "kind": "command",
+      "command": "fetch_tail_until_1430",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_tail_1435_bar",
+      "time": "14:35:05",
+      "kind": "command",
+      "command": "fetch_tail_1435_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_tail_1440_bar",
+      "time": "14:40:05",
+      "kind": "command",
+      "command": "fetch_tail_1440_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_tail_1445_bar",
+      "time": "14:45:05",
+      "kind": "command",
+      "command": "fetch_tail_1445_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "fetch_tail_1450_bar",
+      "time": "14:50:05",
+      "kind": "command",
+      "command": "fetch_tail_1450_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "build_forward_features",
+      "time": "14:50:50",
+      "kind": "command",
+      "command": "build_forward_features",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "build_score_matrix",
+      "time": "14:51:20",
+      "kind": "command",
+      "command": "build_score_matrix",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "freeze_signals",
+      "time": "14:51:50",
+      "kind": "command",
+      "command": "freeze_signals",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "latency_guard",
+      "time": "14:52:10",
+      "kind": "internal",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "fetch_tail_1455_bar",
+      "time": "14:55:05",
+      "kind": "command",
+      "command": "fetch_tail_1455_bar",
+      "notify": "on_failure"
+    },
+    {
+      "checkpoint": "record_entry_1455_vwap",
+      "time": "14:55:50",
+      "kind": "command",
+      "command": "record_entry_1455_vwap",
+      "notify": "always"
+    },
+    {
+      "checkpoint": "entry_observation_check",
+      "time": "14:56:00",
+      "kind": "internal",
+      "notify": "on_failure"
+    }
+  ]
+}

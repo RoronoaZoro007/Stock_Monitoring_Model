@@ -80,11 +80,12 @@ def compute_u2_membership(score_df: pd.DataFrame, daily_file: Path, trade_date: 
     daily = pd.read_parquet(daily_file, columns=["ts_code", "trade_date", "amount"])
     daily["trade_date"] = daily["trade_date"].astype(str)
     daily["amount"] = pd.to_numeric(daily["amount"], errors="coerce")
-    hist = daily[daily["trade_date"] <= str(trade_date)].sort_values(["ts_code", "trade_date"]).copy()
+    hist = daily[daily["trade_date"] < str(trade_date)].sort_values(["ts_code", "trade_date"]).copy()
     hist["avg_amount_60d"] = hist.groupby("ts_code")["amount"].transform(
-        lambda s: s.shift(1).rolling(60, min_periods=20).mean()
+        lambda s: s.rolling(60, min_periods=20).mean()
     )
-    current = hist[hist["trade_date"] == str(trade_date)][["ts_code", "trade_date", "avg_amount_60d"]]
+    current = hist.dropna(subset=["avg_amount_60d"]).drop_duplicates("ts_code", keep="last")[["ts_code", "avg_amount_60d"]]
+    current["trade_date"] = str(trade_date)
     base = score_df[["ts_code", "trade_date"]].merge(current, on=["ts_code", "trade_date"], how="left")
     base["rank_amount_60d"] = base["avg_amount_60d"].rank(method="first", ascending=False)
     base["in_u2"] = base["rank_amount_60d"].le(2500).fillna(False)

@@ -2,7 +2,13 @@
 # that regenerates it. Raw market data and local runtime files stay local.
 *
 !.gitignore
+!README.md
+!requirements.txt
+!.env.example
 !lock_v7_artifacts.py
+!tushare_data_pipeline.py
+!scripts/
+!scripts/run_forward_shadow_live.sh
 !locked_artifacts/
 !locked_artifacts/**
 
@@ -18,6 +24,16 @@
 !research/v8_research/batch2A15_alpha_attribution.py
 !research/v8_research/batch2B_R0_market_regime_diagnostic.py
 !research/v8_research/forward_shadow_runner.py
+!research/v8_research/build_forward_shadow_score_matrix.py
+!research/v8_research/build_forward_shadow_daily_features.py
+!research/v8_research/forward_shadow_full_flow_replay.py
+!research/v8_research/forward_shadow_runtime.py
+!research/v8_research/forward_shadow_exit_monitor.py
+!research/v8_research/forward_shadow_data_guard.py
+!research/v8_research/prepare_forward_shadow_baseline.py
+!research/v8_research/forward_shadow_live_orchestrator.py
+!research/v8_research/run_forward_shadow_provider_chain.py
+!research/v8_research/forward_shadow_runtime_config.example.json
 !reports/
 !reports/tushare/
 !reports/tushare/v8_research/
@@ -104,5 +120,11 @@
 !reports/tushare/v8_research/forward_shadow_setup/forward_shadow_schema.csv
 !reports/tushare/v8_research/forward_shadow_setup/forward_shadow_setup_conclusion.md
 !reports/tushare/v8_research/forward_shadow_setup/tail_down_definition.md
+!reports/tushare/v8_research/forward_shadow_setup/forward_shadow_runtime_runbook.md
+!reports/tushare/v8_research/forward_shadow_setup/forward_shadow_live_runbook.md
 !reports/tushare/v8_forward_shadow/
 !reports/tushare/v8_forward_shadow/README.md
+
+__pycache__/
+*.pyc
+*.pyo
