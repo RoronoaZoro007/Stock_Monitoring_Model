@@ -20,7 +20,7 @@
 | Stage 1 历史日频补齐 | 补齐 2018 至今全 A 日线/复权/市值/停牌/涨跌停 | `batch1_history_daily` | 已完成 | API smoke test、download summary、coverage after | 5 个日频 endpoint 全部 2032/2032 |
 | Stage 2 clean panel + label audit | 合并日频面板，生成 3d/5d/10d forward label 并审计 | `batch2_clean_panel_label_audit` | 已完成 | clean panel、labels、缺失/极端收益/市场状态初稿 | 标签有效率、极端收益和执行风险已量化 |
 | Stage 3 市场状态标记 | 解决牛市训练、熊市失效风险 | `batch3A_market_regime` | 已完成 | 正式 regime 标签、阈值说明、分布、敏感性审计、handoff | 市场状态定义不使用未来收益调参 |
-| Stage 4 行业/概念特征工程 | 刻画行业强度、拥挤度、抱团风险 | 建议 `batch3B_industry_theme_features` | 未开始 | 行业强度、行业成交集中度、个股行业暴露；概念如无 point-in-time 数据则延后 | 明确行业字段是否 point-in-time；概念数据源未锁定则不能训练使用 |
+| Stage 4 行业/概念特征工程 | 刻画行业强度、拥挤度、抱团风险 | `batch3B_industry_theme_features` | 已完成 | 行业强度、行业成交集中度、个股行业暴露、概念禁用说明、handoff | 行业字段为当前快照，仅诊断；概念数据源未锁定，不启用 |
 | Stage 5 因子 IC 与分层诊断 | 训练前判断因子是否有排序能力 | 建议 `batch3C_factor_ic_decile` | 未开始 | RankIC、ICIR、10 桶收益、Top-Bottom、分状态/行业/市值/流动性 IC | 只有稳定、可解释、非单一环境驱动的因子进入候选 |
 | Stage 6 简单规则基准 | 训练前必须打败简单规则 | 建议 `batch3D_simple_rule_baseline` 或独立 Batch4 | 未开始 | 趋势、反转、量价、行业动量、流动性等规则基准 | 新模型必须显著优于简单规则才进入训练 |
 | Stage 7 轻量模型研究 | 只在 Stage 5/6 通过后训练 | 后续 Batch4 | 禁止当前执行 | Logistic/Ridge/LightGBM rank model | 不能跳过前置 IC 和基准 |
@@ -105,6 +105,46 @@
 Handoff：
 
 - `reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_handoff_to_batch3B.md`
+- `reports/tushare/v9_swing_research/v9_current_handoff.md`
+
+### Stage 4 行业/概念特征工程
+
+输出目录：`reports/tushare/v9_swing_research/batch3B_industry_theme_features/`
+
+核心产物：
+
+- `data_tushare/clean/v9/v9_industry_daily_features.parquet`
+- `data_tushare/clean/v9/v9_stock_industry_features.parquet`
+- `reports/tushare/v9_swing_research/batch3B_industry_theme_features/batch3B_industry_feature_dictionary.csv`
+- `reports/tushare/v9_swing_research/batch3B_industry_theme_features/batch3B_point_in_time_limitations.md`
+
+核心结果：
+
+| 项目 | 数值 |
+|---|---:|
+| 行业日频特征行数 | 225,541 |
+| 个股相对行业特征行数 | 9,306,920 |
+| 交易日 | 2,032 |
+| 行业数 | 111 |
+
+行业拥挤状态：
+
+| 状态 | 行数 |
+|---|---:|
+| crowding_normal | 116,855 |
+| crowding_low | 57,143 |
+| crowding_high | 44,883 |
+| insufficient_history | 6,660 |
+
+重要限制：
+
+- `stock_basic.industry` 是当前快照字段，本批次行业特征仅作为诊断和分组输入，不能默认作为无偏训练特征。
+- `industry_crowding_score` 是行业相对自身过去 252 个交易日成交占比的拥挤分位，不是行业之间绝对成交额排名。
+- 概念/题材特征保持禁用；没有 point-in-time 概念成分数据前，不进入 IC 或训练。
+
+Handoff：
+
+- `reports/tushare/v9_swing_research/batch3B_industry_theme_features/batch3B_handoff_to_batch3C.md`
 - `reports/tushare/v9_swing_research/v9_current_handoff.md`
 
 ## 3. Batch 3 不应该一次性做完的原因
@@ -545,14 +585,14 @@ handoff 文件必须至少包含：
 
 ## 7. 当前推荐下一步
 
-当前已经完成 Stage 0、Stage 1、Stage 2、Stage 3。  
+当前已经完成 Stage 0、Stage 1、Stage 2、Stage 3、Stage 4。  
 下一步不应直接训练模型，也不应直接做简单规则回测。  
 推荐执行：
 
-> Batch 3B: industry/theme feature engineering
+> Batch 3C: factor IC and decile diagnostics
 
 原因：
 
 - Batch 3C 的分市场状态 IC 已有正式 market regime 输入。
-- Batch 3C 的分行业/拥挤度 IC 仍依赖 Batch 3B 生成行业强度和拥挤度特征。
-- 概念/题材特征还没有 point-in-time 数据源，Batch 3B 必须明确禁用或另起数据锁定流程。
+- Batch 3C 的分行业/拥挤度 IC 已有 Batch 3B 行业诊断输入。
+- 概念/题材特征仍未锁定 point-in-time 数据源，Batch 3C 必须保持禁用。

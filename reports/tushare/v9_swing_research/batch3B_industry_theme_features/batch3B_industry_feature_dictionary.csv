@@ -1,0 +1,15 @@
+field,level,definition,source_fields,point_in_time_status
+industry,industry,Current snapshot industry from stock_basic; diagnostic only unless point-in-time source is added.,stock_basic.industry,diagnostic_only_current_snapshot
+industry_ew_ret_1d,industry_daily,Equal-weight average stock_ret_1d within industry on trade_date.,adj_close,usable_after_t_close
+industry_ret_5d,industry_daily,Rolling compounded industry_ew_ret_1d over 5 trading days.,industry_ew_ret_1d,usable_after_t_close
+industry_ret_20d,industry_daily,Rolling compounded industry_ew_ret_1d over 20 trading days.,industry_ew_ret_1d,usable_after_t_close
+industry_ret_60d,industry_daily,Rolling compounded industry_ew_ret_1d over 60 trading days.,industry_ew_ret_1d,usable_after_t_close
+industry_breadth_positive,industry_daily,Share of industry stocks with positive stock_ret_1d.,adj_close,usable_after_t_close
+industry_amount_share,industry_daily,Industry amount divided by full-market amount on trade_date.,amount,usable_after_t_close
+industry_crowding_score,industry_daily,"Current industry_amount_share percentile versus the same industry's prior 252 trading days, min 60 days.",industry_amount_share,prior_window_no_future_distribution
+industry_crowding_state,industry_daily,"crowding_high if score >= 0.8, low if <= 0.2, normal otherwise.",industry_crowding_score,prior_window_no_future_distribution
+stock_rel_industry_ret_1d,stock_daily,Stock 1d return minus same-day industry_ew_ret_1d.,"stock_ret_1d, industry_ew_ret_1d",usable_after_t_close
+stock_rel_industry_ret_5d,stock_daily,Stock 5d return minus industry_ret_5d.,"stock_ret_5d, industry_ret_5d",usable_after_t_close
+stock_rel_industry_ret_20d,stock_daily,Stock 20d return minus industry_ret_20d.,"stock_ret_20d, industry_ret_20d",usable_after_t_close
+stock_rel_industry_ret_60d,stock_daily,Stock 60d return minus industry_ret_60d.,"stock_ret_60d, industry_ret_60d",usable_after_t_close
+stock_amount_share_in_industry,stock_daily,Stock amount divided by same-day industry amount.,"amount, industry_amount",usable_after_t_close

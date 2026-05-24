@@ -1,0 +1,3 @@
+feature_group,status,reason,allowed_use
+concept_theme_membership,disabled,No point-in-time concept/theme membership dataset has been locked in Stage 0.,"Do not use for IC or training until a separate data-foundation batch locks source, coverage, fields and point-in-time rules."
+industry_snapshot,diagnostic_only,stock_basic.industry is a current snapshot field and may contain classification look-ahead risk.,Allowed for diagnostics and grouping; training use requires explicit acceptance or point-in-time replacement.
