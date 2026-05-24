@@ -60,6 +60,13 @@ def rel(path: Path) -> str:
         return str(path)
 
 
+def resolve_output_root(value: str | None, default_output_root: Path) -> Path:
+    output_root = Path(str(value or default_output_root))
+    if not output_root.is_absolute():
+        output_root = ROOT / output_root
+    return output_root
+
+
 def read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -155,9 +162,7 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     if mode not in {"fast_replay", "live_time"}:
         raise ValueError("mode must be fast_replay or live_time")
     send_notifications = bool(payload.get("send_notifications", True))
-    output_root = Path(str(payload.get("output_root") or default_output_root))
-    if not output_root.is_absolute():
-        output_root = ROOT / output_root
+    output_root = resolve_output_root(str(payload.get("output_root") or ""), default_output_root)
     requests_per_minute = int(payload.get("requests_per_minute") or 120)
     batch_size = int(payload.get("batch_size") or 160)
     lookback_days = int(payload.get("lookback_trading_days") or 90)
@@ -402,6 +407,55 @@ def stop_job(state: DashboardState) -> dict[str, Any]:
         return {"stopped": False, "message": repr(exc)}
 
 
+def latest_run_context(
+    base_output_root: Path,
+    public_job_doc: dict[str, Any] | None,
+    trade_date: str | None = None,
+    include_base: bool = True,
+) -> dict[str, Any] | None:
+    if public_job_doc and public_job_doc.get("meta"):
+        meta = public_job_doc["meta"]
+        job_trade_date = str(meta.get("trade_date") or "")
+        output_root = resolve_output_root(str(meta.get("output_root") or ""), base_output_root)
+        if job_trade_date and (not trade_date or job_trade_date == trade_date):
+            return {
+                "trade_date": job_trade_date,
+                "output_root": output_root,
+                "source": "current_dashboard_job",
+                "run_id": meta.get("run_id") or public_job_doc.get("job_id") or "",
+                "status": public_job_doc.get("status") or "",
+            }
+
+    candidates: list[dict[str, Any]] = []
+    roots = [base_output_root] if include_base else []
+    runs_root = base_output_root / "runs"
+    if runs_root.exists():
+        roots.extend([p for p in runs_root.iterdir() if p.is_dir()])
+    for root in roots:
+        live_dir = root / "live_runner"
+        if not live_dir.exists():
+            continue
+        for path in live_dir.glob("*_live_runner_status.json"):
+            path_trade_date = path.name.split("_", 1)[0]
+            if not (path_trade_date.isdigit() and len(path_trade_date) == 8):
+                continue
+            if trade_date and path_trade_date != trade_date:
+                continue
+            candidates.append(
+                {
+                    "trade_date": path_trade_date,
+                    "output_root": root,
+                    "source": "latest_status_file",
+                    "run_id": root.name if root.parent.name == "runs" else "",
+                    "mtime": path.stat().st_mtime,
+                    "status_path": str(path),
+                }
+            )
+    if not candidates:
+        return None
+    return max(candidates, key=lambda x: float(x.get("mtime") or 0.0))
+
+
 def numeric(value: str) -> float | None:
     try:
         if value in {"", "nan", "NaN", "None"}:
@@ -472,8 +526,9 @@ def select_columns(rows: list[dict[str, str]], cols: list[str], limit: int = 80)
     return out
 
 
-def load_prior_context(output_root: Path, trade_date: str) -> dict[str, Any]:
-    prior = infer_prior_signal_date(output_root, trade_date)
+def load_prior_context(output_root: Path, trade_date: str, prior_entry_root: Path | None = None) -> dict[str, Any]:
+    entry_root = prior_entry_root or output_root
+    prior = infer_prior_signal_date(entry_root, trade_date)
     if not prior:
         return {
             "prior_signal_date": None,
@@ -484,7 +539,7 @@ def load_prior_context(output_root: Path, trade_date: str) -> dict[str, Any]:
             "sell_execution": [],
             "settlement_summary": [],
         }
-    entry_path = output_root / "daily_entry_prices" / f"{prior}_entry_prices.csv"
+    entry_path = entry_root / "daily_entry_prices" / f"{prior}_entry_prices.csv"
     rec_path = output_root / "daily_exit_recommendations" / f"{prior}_{trade_date}_exit_recommendations.csv"
     exec_path = output_root / "daily_exit_execution" / f"{prior}_{trade_date}_exit_execution.csv"
     settle_path = output_root / "daily_exit_settlement" / f"{prior}_{trade_date}_exit_settlement.csv"
@@ -567,7 +622,7 @@ def load_today_context(output_root: Path, trade_date: str) -> dict[str, Any]:
     }
 
 
-def dashboard_artifacts(output_root: Path, trade_date: str) -> dict[str, Any]:
+def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Path | None = None) -> dict[str, Any]:
     live_dir = output_root / "live_runner"
     status_path = live_dir / f"{trade_date}_live_runner_status.json"
     steps_path = live_dir / f"{trade_date}_live_runner_steps.csv"
@@ -600,7 +655,7 @@ def dashboard_artifacts(output_root: Path, trade_date: str) -> dict[str, Any]:
         "candidate_status": candidates,
         "signal_summary": summarize_by_strategy(signals),
         "entry_counts": entry_counts,
-        "prior_context": load_prior_context(output_root, trade_date),
+        "prior_context": load_prior_context(output_root, trade_date, prior_entry_root=prior_entry_root),
         "today_context": load_today_context(output_root, trade_date),
         "files": files,
         "file_exists": exists,
@@ -850,6 +905,14 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           </select>
         </div>
         <div>
+          <label for="dataSourceMode">数据展示口径</label>
+          <select id="dataSourceMode">
+            <option value="history" selected>历史已有数据（所选日期）</option>
+            <option value="latest_run">最近一次运行结果</option>
+            <option value="rerun_clean">重跑清爽视图（仅 T-1 历史 + 本次输出）</option>
+          </select>
+        </div>
+        <div>
           <label for="notificationPolicy">消息推送策略</label>
           <select id="notificationPolicy">
             <option value="key_events" selected>关键交易 + 失败</option>
@@ -916,6 +979,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         <span id="jobStatus" class="pill">未启动</span>
         <span id="modePill" class="pill">mode: -</span>
         <span id="datePill" class="pill">date: -</span>
+        <span id="dataSourcePill" class="pill">source: history</span>
         <span id="pidPill" class="pill">pid: -</span>
       </div>
       <div class="metrics">
@@ -1195,6 +1259,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       return map[step] || '等待或执行 paper-only 跟踪节点';
     }}
     async function startJob() {{
+      const dataMode = $('dataSourceMode').value;
       const payload = {{
         trade_date: dateToYmd($('tradeDate').value),
         mode: $('mode').value,
@@ -1206,7 +1271,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         notification_policy: $('notificationPolicy').value,
         send_notifications: $('sendNotifications').checked,
         skip_moneyflow: $('skipMoneyflow').checked,
-        use_run_id_output_dir: $('useRunIdOutputDir').checked,
+        use_run_id_output_dir: $('useRunIdOutputDir').checked || dataMode === 'rerun_clean',
         preserve_run_snapshot: $('preserveRunSnapshot').checked,
         force_refresh_minutes: $('forceRefreshMinutes').checked,
         tushare_token: $('tushareToken').value.trim(),
@@ -1234,11 +1299,12 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       const prior = artifacts.prior_context || {{}};
       const today = artifacts.today_context || {{}};
       const jobStatus = job ? job.status : 'idle';
-      const selectedDate = data.requested_trade_date || job?.meta?.trade_date || data.default_trade_date || '-';
+      const selectedDate = data.display_trade_date || data.requested_trade_date || job?.meta?.trade_date || data.default_trade_date || '-';
       $('jobStatus').textContent = jobStatus;
       $('jobStatus').className = 'pill ' + (jobStatus === 'completed' ? 'ok' : (jobStatus === 'failed' ? 'bad' : (jobStatus === 'running' || jobStatus === 'stopping' ? 'warn' : '')));
       $('modePill').textContent = 'mode: ' + (job?.meta?.mode || '-');
       $('datePill').textContent = 'date: ' + selectedDate;
+      $('dataSourcePill').textContent = 'source: ' + (data.display_source || data.data_source_mode || 'history');
       $('pidPill').textContent = 'pid: ' + (job?.pid || '-');
       if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
       if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
@@ -1259,6 +1325,9 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         ? '运行中'
         : (jobStatus === 'failed' ? '有错误' : (jobStatus === 'completed' ? '已完成' : '待启动 / 可查看历史'));
       $('overviewSubline').textContent = '卖出提示 ' + sellCount + ' 条；尾盘买入候选 ' + buyCount + ' 条；当前节点：' + stepDescription(live.current_step_id || '');
+      if (data.data_source_mode === 'rerun_clean' && data.display_source === 'rerun_clean_empty') {{
+        $('overviewSubline').textContent = '重跑清爽视图：当前只展示 T-1 历史入场；T 日卖出、尾盘选股、步骤和日志等待本次 run 产生。';
+      }}
       $('sellActionMeta').textContent = prior.prior_signal_date
         ? ('来自 T-1 信号 ' + prior.prior_signal_date + '，价格展示保留 2 位小数')
         : '未找到 T-1 信号';
@@ -1332,6 +1401,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         const params = new URLSearchParams();
         params.set('trade_date', dateToYmd($('tradeDate').value));
         params.set('output_root', $('outputRoot').value);
+        params.set('data_source_mode', $('dataSourceMode').value);
         const resp = await fetch('/api/status?' + params.toString());
         render(await resp.json());
       }} catch (e) {{
@@ -1355,6 +1425,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     $('refreshBtn').addEventListener('click', refresh);
     $('tradeDate').addEventListener('change', refresh);
     $('outputRoot').addEventListener('change', refresh);
+    $('dataSourceMode').addEventListener('change', () => {{
+      if ($('dataSourceMode').value === 'rerun_clean') {{
+        $('useRunIdOutputDir').checked = true;
+        setMessage('重跑清爽视图会自动使用 run_id 输出目录，避免读取同日期历史旧结果。');
+      }}
+      refresh();
+    }});
     refresh();
     setInterval(refresh, 3000);
   </script>
@@ -1386,21 +1463,49 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     job = state.current_job()
                     public = public_job(job)
                 trade_date = None
-                output_root = state.output_root
+                base_output_root = state.output_root
                 if public and public.get("meta"):
                     trade_date = public["meta"].get("trade_date")
-                    output_root = Path(public["meta"].get("output_root") or state.output_root)
                 if params.get("trade_date"):
                     trade_date = normalize_trade_date(params["trade_date"][0])
                 if params.get("output_root"):
-                    output_root = Path(params["output_root"][0])
-                    if not output_root.is_absolute():
-                        output_root = ROOT / output_root
+                    base_output_root = resolve_output_root(params["output_root"][0], state.output_root)
                 trade_date = trade_date or today_ymd()
+                data_source_mode = str((params.get("data_source_mode") or ["history"])[0] or "history")
+                if data_source_mode not in {"history", "latest_run", "rerun_clean"}:
+                    data_source_mode = "history"
+                display_trade_date = trade_date
+                display_output_root = base_output_root
+                prior_entry_root: Path | None = None
+                display_source = "history"
+                display_note = "展示所选日期在当前输出目录下已有的历史结果。"
+                if data_source_mode == "latest_run":
+                    ctx = latest_run_context(base_output_root, public, include_base=True)
+                    if ctx:
+                        display_trade_date = str(ctx["trade_date"])
+                        display_output_root = Path(ctx["output_root"])
+                        display_source = str(ctx.get("source") or "latest_run")
+                        display_note = "展示最近一次 dashboard run 或最近状态文件对应的结果。"
+                elif data_source_mode == "rerun_clean":
+                    ctx = latest_run_context(base_output_root, public, trade_date=trade_date, include_base=False)
+                    prior_entry_root = base_output_root
+                    if ctx:
+                        display_output_root = Path(ctx["output_root"])
+                        display_source = str(ctx.get("source") or "rerun_clean_run")
+                        display_note = "T-1 入场从历史基线读取；T 日结果只读取本次 run 输出目录。"
+                    else:
+                        display_output_root = base_output_root / "runs" / "__rerun_clean_waiting__"
+                        display_source = "rerun_clean_empty"
+                        display_note = "尚未找到本次 run 输出；除 T-1 历史入场外，T 日结果保持空白。"
                 payload = {
                     "default_trade_date": today_ymd(),
                     "requested_trade_date": trade_date,
-                    "requested_output_root": str(output_root),
+                    "requested_output_root": str(base_output_root),
+                    "display_trade_date": display_trade_date,
+                    "display_output_root": str(display_output_root),
+                    "display_source": display_source,
+                    "display_note": display_note,
+                    "data_source_mode": data_source_mode,
                     "min_trade_date": MIN_TRADE_DATE,
                     "beijing_now": bj_now().isoformat(timespec="seconds"),
                     "git": {
@@ -1410,7 +1515,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     },
                     "env": env_health(send_notifications=True),
                     "job": public,
-                    "artifacts": dashboard_artifacts(output_root, trade_date),
+                    "artifacts": dashboard_artifacts(display_output_root, display_trade_date, prior_entry_root=prior_entry_root),
                 }
                 write_json_response(self, HTTPStatus.OK, payload)
                 return
