@@ -1,0 +1,4 @@
+file,role,sha256
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/data_tushare/clean/v9/v9_daily_panel.parquet,clean_daily_panel,aca3451c965a9da27ac5baa789f7ac0585ef5cbc49f3d949ea97ddc16c69e7d0
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/data_tushare/clean/v9/v9_swing_labels_3_5_10.parquet,swing_labels_3_5_10,2df101092424e18afe06bd8d3d3704d9f72ee6a4d6af1e02395d334b97d1d16b
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/data_tushare/clean/v9/v9_market_regime_initial.parquet,initial_market_regime,3758dcf3ed9818e620f583eea55b8984ae9087c44116f7f7ffdbe93709302390

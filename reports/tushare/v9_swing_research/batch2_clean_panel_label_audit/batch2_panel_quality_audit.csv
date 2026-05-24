@@ -1,0 +1,11 @@
+field,missing_rows,missing_ratio
+open,0,0.0
+close,0,0.0
+adj_factor,0,0.0
+basic_close,64735,0.006955577140450331
+up_limit,65524,0.007040352769767012
+down_limit,65524,0.007040352769767012
+total_mv,64735,0.006955577140450331
+turnover_rate,64735,0.006955577140450331
+duplicate_code_date,0,0.0
+non_positive_price_rows,0,0.0

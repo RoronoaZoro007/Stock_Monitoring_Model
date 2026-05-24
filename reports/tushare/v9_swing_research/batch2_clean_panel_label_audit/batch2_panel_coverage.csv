@@ -1,0 +1,2 @@
+rows,trade_days,codes,date_min,date_max,min_codes_per_day,median_codes_per_day,max_codes_per_day,duplicate_code_dates
+9306920,2032,5755,20180102,20260522,3177,4793.5,5504,0
