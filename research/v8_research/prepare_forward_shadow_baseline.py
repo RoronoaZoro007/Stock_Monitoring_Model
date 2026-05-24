@@ -120,16 +120,49 @@ def load_or_fetch_trade_cal(
     max_retries: int,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     DEFAULT_TRADE_CAL.parent.mkdir(parents=True, exist_ok=True)
-    result = fetch_to_parquet(
-        client,
-        limiter,
-        "trade_cal",
-        {"exchange": "SSE", "start_date": start_date, "end_date": end_date},
-        "exchange,cal_date,is_open,pretrade_date",
-        DEFAULT_TRADE_CAL,
-        refresh=refresh or not DEFAULT_TRADE_CAL.exists(),
-        max_retries=max_retries,
-    )
+    cached = pd.DataFrame()
+    cache_covers_request = False
+    if DEFAULT_TRADE_CAL.exists() and DEFAULT_TRADE_CAL.stat().st_size > 0:
+        cached = pd.read_parquet(DEFAULT_TRADE_CAL)
+        if not cached.empty and "cal_date" in cached.columns:
+            cached["cal_date"] = cached["cal_date"].astype(str)
+            cache_covers_request = bool(cached["cal_date"].min() <= start_date and cached["cal_date"].max() >= end_date)
+    if refresh or not DEFAULT_TRADE_CAL.exists() or not cache_covers_request:
+        fetched = call_with_retry(
+            client,
+            limiter,
+            "trade_cal",
+            {"exchange": "SSE", "start_date": start_date, "end_date": end_date},
+            "exchange,cal_date,is_open,pretrade_date",
+            max_retries,
+        )
+        frames = [df for df in [cached, fetched] if not df.empty]
+        merged = pd.concat(frames, ignore_index=True, sort=False) if frames else fetched
+        if not merged.empty:
+            merged["cal_date"] = merged["cal_date"].astype(str)
+            keys = ["exchange", "cal_date"] if "exchange" in merged.columns else ["cal_date"]
+            merged = merged.drop_duplicates(keys, keep="last").sort_values("cal_date", ascending=False)
+        checksum = write_parquet_atomic(merged, str(DEFAULT_TRADE_CAL))
+        result = {
+            "api_name": "trade_cal",
+            "path": str(DEFAULT_TRADE_CAL),
+            "status": "fetched_merged" if cache_covers_request else "fetched_missing_range",
+            "rows": int(len(merged)),
+            "requested_start_date": start_date,
+            "requested_end_date": end_date,
+            "cache_covers_request_before_fetch": cache_covers_request,
+            "sha1": checksum,
+        }
+    else:
+        result = {
+            "api_name": "trade_cal",
+            "path": str(DEFAULT_TRADE_CAL),
+            "status": "cached",
+            "rows": int(len(cached)),
+            "requested_start_date": start_date,
+            "requested_end_date": end_date,
+            "cache_covers_request_before_fetch": True,
+        }
     cal = pd.read_parquet(DEFAULT_TRADE_CAL)
     cal["cal_date"] = cal["cal_date"].astype(str)
     cal["is_open"] = pd.to_numeric(cal["is_open"], errors="coerce").fillna(0).astype(int)
