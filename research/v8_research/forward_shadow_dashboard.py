@@ -820,7 +820,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         <div class="bar">
           <button id="startBtn">启动</button>
           <button id="stopBtn" class="danger">停止</button>
-          <button id="refreshBtn" class="secondary">刷新</button>
+          <button id="refreshBtn" class="secondary">刷新页面数据</button>
         </div>
       </div>
       <p class="muted">模式1仍走真实接口和真实数据处理，只是不等待 09:25/14:50 等墙上时间；模式2按北京时间等待，已过节点会立即补执行。run_id 输出目录会写入 `输出目录/runs/run_id`；快照会复制轻量结果到 `输出目录/run_snapshots/run_id`；强制重新下载分钟线会重新请求分钟 bar 并按时间键覆盖去重。页面输入的 token 只注入本次子进程环境，不写入文件、不回显。</p>
@@ -1007,7 +1007,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('jobStatus').textContent = jobStatus;
       $('jobStatus').className = 'pill ' + (jobStatus === 'completed' ? 'ok' : (jobStatus === 'failed' ? 'bad' : (jobStatus === 'running' || jobStatus === 'stopping' ? 'warn' : '')));
       $('modePill').textContent = 'mode: ' + (job?.meta?.mode || '-');
-      $('datePill').textContent = 'date: ' + (job?.meta?.trade_date || data.default_trade_date || '-');
+      $('datePill').textContent = 'date: ' + (data.requested_trade_date || job?.meta?.trade_date || data.default_trade_date || '-');
       $('pidPill').textContent = 'pid: ' + (job?.pid || '-');
       if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
       if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
@@ -1063,7 +1063,10 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }}
     async function refresh() {{
       try {{
-        const resp = await fetch('/api/status');
+        const params = new URLSearchParams();
+        params.set('trade_date', dateToYmd($('tradeDate').value));
+        params.set('output_root', $('outputRoot').value);
+        const resp = await fetch('/api/status?' + params.toString());
         render(await resp.json());
       }} catch (e) {{
         setMessage(String(e), true);
@@ -1077,6 +1080,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }});
     $('stopBtn').addEventListener('click', stopJob);
     $('refreshBtn').addEventListener('click', refresh);
+    $('tradeDate').addEventListener('change', refresh);
+    $('outputRoot').addEventListener('change', refresh);
     refresh();
     setInterval(refresh, 3000);
   </script>
@@ -1114,9 +1119,15 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     output_root = Path(public["meta"].get("output_root") or state.output_root)
                 if params.get("trade_date"):
                     trade_date = normalize_trade_date(params["trade_date"][0])
+                if params.get("output_root"):
+                    output_root = Path(params["output_root"][0])
+                    if not output_root.is_absolute():
+                        output_root = ROOT / output_root
                 trade_date = trade_date or today_ymd()
                 payload = {
                     "default_trade_date": today_ymd(),
+                    "requested_trade_date": trade_date,
+                    "requested_output_root": str(output_root),
                     "min_trade_date": MIN_TRADE_DATE,
                     "beijing_now": bj_now().isoformat(timespec="seconds"),
                     "git": {

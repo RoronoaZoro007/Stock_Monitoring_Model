@@ -77,6 +77,7 @@ The dashboard surfaces the operational state required for paper tracking:
 - `T-1 纸面持仓与今日卖出`: prior-day paper entry rows, same-day sell recommendations, exit execution records, and per-line settlement summary.
 - `今日尾盘选股与买入价`: current-day frozen buy candidates and the 14:55 paper entry VWAP once recorded.
 - `四线路状态`: S0, S1, S0+R1, and S1+R1 route activation and selected counts.
+- Changing `执行日期` or `输出目录` refreshes the displayed data for that selection. The `刷新页面数据` button also reloads the selected date/output-root explicitly.
 
 ## Notification Policy
 
