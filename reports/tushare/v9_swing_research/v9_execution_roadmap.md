@@ -19,7 +19,7 @@
 | Stage 0 数据底座锁定 | 确认 raw 数据可审计、可复现 | `stage0_data_foundation` | 已完成 | raw manifest、coverage、字段字典、limitations、hash | 缺失交易日为 0，风险已写明 |
 | Stage 1 历史日频补齐 | 补齐 2018 至今全 A 日线/复权/市值/停牌/涨跌停 | `batch1_history_daily` | 已完成 | API smoke test、download summary、coverage after | 5 个日频 endpoint 全部 2032/2032 |
 | Stage 2 clean panel + label audit | 合并日频面板，生成 3d/5d/10d forward label 并审计 | `batch2_clean_panel_label_audit` | 已完成 | clean panel、labels、缺失/极端收益/市场状态初稿 | 标签有效率、极端收益和执行风险已量化 |
-| Stage 3 市场状态标记 | 解决牛市训练、熊市失效风险 | 建议 `batch3A_market_regime` | 未开始，Batch2 只有初稿 | 正式 regime 标签、阈值说明、分布、敏感性审计 | 市场状态定义不使用未来收益调参 |
+| Stage 3 市场状态标记 | 解决牛市训练、熊市失效风险 | `batch3A_market_regime` | 已完成 | 正式 regime 标签、阈值说明、分布、敏感性审计、handoff | 市场状态定义不使用未来收益调参 |
 | Stage 4 行业/概念特征工程 | 刻画行业强度、拥挤度、抱团风险 | 建议 `batch3B_industry_theme_features` | 未开始 | 行业强度、行业成交集中度、个股行业暴露；概念如无 point-in-time 数据则延后 | 明确行业字段是否 point-in-time；概念数据源未锁定则不能训练使用 |
 | Stage 5 因子 IC 与分层诊断 | 训练前判断因子是否有排序能力 | 建议 `batch3C_factor_ic_decile` | 未开始 | RankIC、ICIR、10 桶收益、Top-Bottom、分状态/行业/市值/流动性 IC | 只有稳定、可解释、非单一环境驱动的因子进入候选 |
 | Stage 6 简单规则基准 | 训练前必须打败简单规则 | 建议 `batch3D_simple_rule_baseline` 或独立 Batch4 | 未开始 | 趋势、反转、量价、行业动量、流动性等规则基准 | 新模型必须显著优于简单规则才进入训练 |
@@ -74,6 +74,38 @@
 - 3d 标签最干净，但收益窗口短，可能噪声较高。
 - 5d 是当前最合理的折中候选。
 - 10d 均值更高，但极端样本更多，后续必须重点看是否由牛市、题材抱团或少数极端行情驱动。
+
+### Stage 3 市场状态正式标记
+
+输出目录：`reports/tushare/v9_swing_research/batch3A_market_regime/`
+
+核心定义：
+
+- `trend_regime`: `roll60_ew_ret >= +8%` 为 `strong`，`<= -8%` 为 `weak`，其余为 `neutral`。
+- `extreme_selloff_flag`: `breadth_positive < 20%` 或 `ew_ret <= -3%`。
+- `vol_regime`: `roll20_dispersion` 相对 t-1 扩展 20/80 分位。
+- `industry_crowding_regime`: `top5_industry_amount_share` 相对 t-1 扩展 20/80 分位。
+- `stock_concentration_regime`: `top100_amount_share` 相对 t-1 扩展 20/80 分位。
+
+核心结果：
+
+| 状态 | 天数 | 占比 |
+|---|---:|---:|
+| insufficient_history | 60 | 2.95% |
+| neutral | 1132 | 55.71% |
+| strong | 556 | 27.36% |
+| weak | 284 | 13.98% |
+
+重要限制：
+
+- `trend_regime` 使用当日收盘后的市场数据，适合历史 swing 研究，不适合盘中实时判定。
+- 波动和拥挤阈值使用 t-1 扩展分位，避免未来分布泄露。
+- 行业拥挤仍为诊断字段，因为 Stage 0 已确认 `stock_basic.industry` 是当前快照字段。
+
+Handoff：
+
+- `reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_handoff_to_batch3B.md`
+- `reports/tushare/v9_swing_research/v9_current_handoff.md`
 
 ## 3. Batch 3 不应该一次性做完的原因
 
@@ -471,7 +503,31 @@
 
 > Forward paper tracking 阶段仅能给出是否继续观察或终止研究的建议，不直接进入实盘。若要模拟盘或实盘，需要另建风控、交易、合规和人工确认流程。
 
-## 5. 每阶段完成后的固定回复模板
+## 5. 每阶段 Handoff 固化规则
+
+每个阶段完成后，必须同时写两类 handoff 文件：
+
+| 文件 | 作用 |
+|---|---|
+| `reports/tushare/v9_swing_research/{batch_dir}/{batch}_handoff_to_{next_batch}.md` | 保存本阶段结论、下一阶段输入、禁止事项和进入条件 |
+| `reports/tushare/v9_swing_research/v9_current_handoff.md` | 始终覆盖为最新 handoff，下一次恢复任务时优先读取 |
+
+handoff 文件必须至少包含：
+
+1. 已完成 batch 名称和输出目录。
+2. 本阶段核心结论。
+3. 本阶段明确没有做什么。
+4. 下一阶段必须读取的文件。
+5. 下一阶段允许做什么。
+6. 下一阶段禁止做什么。
+7. 是否需要用户确认后继续。
+
+当前最新 handoff：
+
+- `reports/tushare/v9_swing_research/v9_current_handoff.md`
+- 内容来自 `Batch 3A -> Batch 3B`
+
+## 6. 每阶段完成后的固定回复模板
 
 每个阶段完成后，必须按以下结构回复：
 
@@ -487,16 +543,16 @@
 10. 下一阶段具体要做什么
 11. 是否需要用户确认后再继续
 
-## 6. 当前推荐下一步
+## 7. 当前推荐下一步
 
-当前已经完成 Stage 0、Stage 1、Stage 2。  
+当前已经完成 Stage 0、Stage 1、Stage 2、Stage 3。  
 下一步不应直接训练模型，也不应直接做简单规则回测。  
 推荐执行：
 
-> Batch 3A: market regime formalization
+> Batch 3B: industry/theme feature engineering
 
 原因：
 
-- Batch 3C 的“分市场状态 IC”依赖正式市场状态标签。
-- Batch 3B 的行业拥挤度也需要和市场状态一起解释。
-- 先做正式 market regime，可以防止后续因子只在牛市有效却被误判为长期 alpha。
+- Batch 3C 的分市场状态 IC 已有正式 market regime 输入。
+- Batch 3C 的分行业/拥挤度 IC 仍依赖 Batch 3B 生成行业强度和拥挤度特征。
+- 概念/题材特征还没有 point-in-time 数据源，Batch 3B 必须明确禁用或另起数据锁定流程。

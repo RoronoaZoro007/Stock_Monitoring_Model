@@ -1,0 +1,53 @@
+component,description,value,days,ratio,first_date,last_date
+trend_regime,market trend by 60d equal-weight return,insufficient_history,60,0.02952755905511811,20180102,20180402
+trend_regime,market trend by 60d equal-weight return,neutral,1132,0.5570866141732284,20180403,20260522
+trend_regime,market trend by 60d equal-weight return,strong,556,0.2736220472440945,20180514,20260318
+trend_regime,market trend by 60d equal-weight return,weak,284,0.13976377952755906,20180502,20240913
+vol_regime,20d cross-sectional dispersion regime,high_vol,493,0.24261811023622049,20190311,20241204
+vol_regime,20d cross-sectional dispersion regime,insufficient_history,272,0.13385826771653545,20180102,20190218
+vol_regime,20d cross-sectional dispersion regime,low_vol,180,0.08858267716535433,20190219,20240927
+vol_regime,20d cross-sectional dispersion regime,normal_vol,1087,0.5349409448818898,20190221,20260522
+industry_crowding_regime,top5 industry amount-share crowding,crowding_high,754,0.37106299212598426,20190115,20260522
+industry_crowding_regime,top5 industry amount-share crowding,crowding_low,134,0.06594488188976377,20190411,20250603
+industry_crowding_regime,top5 industry amount-share crowding,crowding_normal,892,0.4389763779527559,20190118,20260129
+industry_crowding_regime,top5 industry amount-share crowding,insufficient_history,252,0.12401574803149606,20180102,20190114
+stock_concentration_regime,top100 stock amount-share concentration,insufficient_history,252,0.12401574803149606,20180102,20190114
+stock_concentration_regime,top100 stock amount-share concentration,stock_concentration_high,112,0.05511811023622047,20190722,20260424
+stock_concentration_regime,top100 stock amount-share concentration,stock_concentration_low,713,0.35088582677165353,20190123,20250821
+stock_concentration_regime,top100 stock amount-share concentration,stock_concentration_normal,955,0.4699803149606299,20190115,20260522
+market_regime_id,combined trend/vol/industry-crowding state,insufficient_history|insufficient_history|insufficient_history,60,0.02952755905511811,20180102,20180402
+market_regime_id,combined trend/vol/industry-crowding state,neutral|high_vol|crowding_high,50,0.024606299212598427,20190523,20211126
+market_regime_id,combined trend/vol/industry-crowding state,neutral|high_vol|crowding_low,3,0.0014763779527559055,20210219,20210226
+market_regime_id,combined trend/vol/industry-crowding state,neutral|high_vol|crowding_normal,132,0.06496062992125984,20190524,20220209
+market_regime_id,combined trend/vol/industry-crowding state,neutral|insufficient_history|crowding_high,8,0.003937007874015748,20190116,20190218
+market_regime_id,combined trend/vol/industry-crowding state,neutral|insufficient_history|crowding_normal,8,0.003937007874015748,20190118,20190211
+market_regime_id,combined trend/vol/industry-crowding state,neutral|insufficient_history|insufficient_history,87,0.04281496062992126,20180403,20190108
+market_regime_id,combined trend/vol/industry-crowding state,neutral|low_vol|crowding_high,68,0.03346456692913386,20190219,20240923
+market_regime_id,combined trend/vol/industry-crowding state,neutral|low_vol|crowding_normal,77,0.03789370078740158,20190731,20240927
+market_regime_id,combined trend/vol/industry-crowding state,neutral|normal_vol|crowding_high,296,0.14566929133858267,20190221,20260522
+market_regime_id,combined trend/vol/industry-crowding state,neutral|normal_vol|crowding_low,47,0.02312992125984252,20201120,20250603
+market_regime_id,combined trend/vol/industry-crowding state,neutral|normal_vol|crowding_normal,356,0.17519685039370078,20190530,20250624
+market_regime_id,combined trend/vol/industry-crowding state,strong|high_vol|crowding_high,111,0.054625984251968504,20190311,20241129
+market_regime_id,combined trend/vol/industry-crowding state,strong|high_vol|crowding_low,14,0.006889763779527559,20190411,20220111
+market_regime_id,combined trend/vol/industry-crowding state,strong|high_vol|crowding_normal,129,0.06348425196850394,20190315,20241204
+market_regime_id,combined trend/vol/industry-crowding state,strong|insufficient_history|crowding_high,2,0.000984251968503937,20190115,20190124
+market_regime_id,combined trend/vol/industry-crowding state,strong|insufficient_history|crowding_normal,2,0.000984251968503937,20190121,20190123
+market_regime_id,combined trend/vol/industry-crowding state,strong|insufficient_history|insufficient_history,13,0.0063976377952755905,20180514,20190114
+market_regime_id,combined trend/vol/industry-crowding state,strong|low_vol|crowding_high,10,0.004921259842519685,20230210,20230403
+market_regime_id,combined trend/vol/industry-crowding state,strong|low_vol|crowding_normal,8,0.003937007874015748,20230130,20230228
+market_regime_id,combined trend/vol/industry-crowding state,strong|normal_vol|crowding_high,178,0.08759842519685039,20190225,20260318
+market_regime_id,combined trend/vol/industry-crowding state,strong|normal_vol|crowding_low,15,0.0073818897637795275,20210511,20240521
+market_regime_id,combined trend/vol/industry-crowding state,strong|normal_vol|crowding_normal,74,0.03641732283464567,20200109,20260129
+market_regime_id,combined trend/vol/industry-crowding state,weak|high_vol|crowding_high,8,0.003937007874015748,20210112,20240311
+market_regime_id,combined trend/vol/industry-crowding state,weak|high_vol|crowding_low,15,0.0073818897637795275,20210309,20240207
+market_regime_id,combined trend/vol/industry-crowding state,weak|high_vol|crowding_normal,31,0.015255905511811024,20210111,20240312
+market_regime_id,combined trend/vol/industry-crowding state,weak|insufficient_history|insufficient_history,92,0.045275590551181105,20180502,20181112
+market_regime_id,combined trend/vol/industry-crowding state,weak|low_vol|crowding_high,4,0.001968503937007874,20231023,20240913
+market_regime_id,combined trend/vol/industry-crowding state,weak|low_vol|crowding_normal,13,0.0063976377952755905,20240814,20240911
+market_regime_id,combined trend/vol/industry-crowding state,weak|normal_vol|crowding_high,19,0.009350393700787402,20190620,20240725
+market_regime_id,combined trend/vol/industry-crowding state,weak|normal_vol|crowding_low,40,0.01968503937007874,20190704,20240423
+market_regime_id,combined trend/vol/industry-crowding state,weak|normal_vol|crowding_normal,62,0.03051181102362205,20190605,20240829
+extreme_selloff_flag,boolean flag,True,256,0.12598425196850394,20180102,20260521
+high_vol_flag,boolean flag,True,493,0.24261811023622049,20190311,20241204
+industry_crowding_high_flag,boolean flag,True,754,0.37106299212598426,20190115,20260522
+stock_concentration_high_flag,boolean flag,True,112,0.05511811023622047,20190722,20260424

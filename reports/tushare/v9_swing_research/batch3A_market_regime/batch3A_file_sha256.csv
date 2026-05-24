@@ -1,0 +1,12 @@
+file,sha256,size_bytes
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_conclusion.md,afde6f32a15df7c4b4408dd195b72ac4e3c71a4ebeccbc14acdc0ae11ff61f64,2609
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_handoff_to_batch3B.md,8d55cd670273b4c5b870ce2199c3e252fa064f3fd50863c434b17e4ffea21fb5,1699
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_market_regime_daily.csv,1155997e6962e9238fc29263ed558b02a3b44894c25e1b8914e178cb3f40dd82,1215457
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_market_regime_summary.csv,1eb423f7426d865b1959a2a99b42a20928c9bc6bf9df4cf639e81ce2176bfe96,6605
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_regime_by_year.csv,67d55db8b7942b464fd8fb6be4bea682091a66c044139a6c42daa3a59be12325,1743
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_regime_limitations.md,01f0e5be6e99b8cd586ad84567b81b1ab71fb9de93d7f7e35549cc5e7394b8f2,1454
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_regime_threshold_sensitivity.csv,4963543410056213952508b828c3d7799b6b9a46ec596b83a321ee4b45effe6e,157
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_regime_thresholds.csv,2e96cf432d8eb98ce3fd67d680dfc6d319584e6326059c0b2ed21ef4430fb3ad,1284
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch3A_market_regime/batch3A_regime_transition.csv,ed8c22b1684a58408d412334f8320813c3b89e056bf9833c7ff2d7dd185b5a01,422
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/data_tushare/clean/v9/v9_market_regime_formal.parquet,c313818d6602bf29d8d8f4ef0f48219b84fa814238911565f561eaec01f60325,356136
+/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/v9_current_handoff.md,8d55cd670273b4c5b870ce2199c3e252fa064f3fd50863c434b17e4ffea21fb5,1699

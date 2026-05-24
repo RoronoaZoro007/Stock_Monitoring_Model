@@ -2,7 +2,7 @@ stage,batch,status,output_dir,gate_result,next_action
 Stage 0 Data Foundation,stage0_data_foundation,completed,reports/tushare/v9_swing_research/stage0_data_foundation,pass,"Proceed to Stage 1/2 already completed; use this as raw data lock for all future batches."
 Stage 1 History Daily Download,batch1_history_daily,completed,reports/tushare/v9_swing_research/batch1_history_daily,pass,"Proceed to clean panel and label audit; already completed in Batch 2."
 Stage 2 Clean Panel Label Audit,batch2_clean_panel_label_audit,completed,reports/tushare/v9_swing_research/batch2_clean_panel_label_audit,pass,"Proceed to Batch 3A market regime formalization."
-Stage 3 Market Regime,batch3A_market_regime,not_started,,pending,"Build formal market regime labels before factor IC."
+Stage 3 Market Regime,batch3A_market_regime,completed,reports/tushare/v9_swing_research/batch3A_market_regime,pass,"Proceed to Batch 3B industry/theme features; use v9_market_regime_formal.parquet and batch3A_handoff_to_batch3B.md as required inputs."
 Stage 4 Industry Theme Features,batch3B_industry_theme_features,not_started,,pending,"Build industry diagnostics; defer concept features unless point-in-time source is locked."
 Stage 5 Factor IC Decile,batch3C_factor_ic_decile,not_started,,pending,"Run RankIC, ICIR, decile returns and split diagnostics after 3A/3B."
 Stage 6 Simple Rule Baseline,batch3D_simple_rule_baseline,not_started,,pending,"Benchmark simple rules before any model training."

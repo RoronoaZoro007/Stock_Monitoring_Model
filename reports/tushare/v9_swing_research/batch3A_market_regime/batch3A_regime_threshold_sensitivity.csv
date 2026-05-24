@@ -1,0 +1,5 @@
+threshold_abs,strong_days,weak_days,neutral_days,insufficient_history_days
+0.06,693,381,898,60
+0.08,556,284,1132,60
+0.1,429,211,1332,60
+0.12,338,160,1474,60

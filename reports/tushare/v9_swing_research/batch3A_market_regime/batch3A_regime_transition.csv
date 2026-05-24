@@ -1,0 +1,10 @@
+trend_regime,next_trend_regime,days,from_ratio
+insufficient_history,insufficient_history,59,0.9833333333333333
+insufficient_history,neutral,1,0.016666666666666666
+neutral,neutral,1054,0.9319186560565871
+neutral,strong,45,0.03978779840848806
+neutral,weak,32,0.028293545534924844
+strong,neutral,45,0.08093525179856115
+strong,strong,511,0.9190647482014388
+weak,neutral,32,0.11267605633802817
+weak,weak,252,0.8873239436619719

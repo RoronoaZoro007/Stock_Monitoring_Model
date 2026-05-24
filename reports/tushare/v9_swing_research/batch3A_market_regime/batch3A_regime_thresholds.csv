@@ -1,0 +1,6 @@
+regime_component,field,rule,threshold_type,uses_future_data,reason
+trend_regime,roll60_ew_ret,"strong if >= +8%, weak if <= -8%, neutral otherwise",fixed_economic_threshold,False,A +/-8% full-market equal-weight 60 trading-day move is large enough to separate trend environments while preserving weak-state sample size.
+extreme_selloff_flag,"breadth_positive, ew_ret",true if breadth_positive < 20% or ew_ret <= -3%,fixed_market_stress_threshold,False,Captures broad one-day selloff pressure without looking at future returns.
+vol_regime,roll20_dispersion,high if >= expanding 80% quantile as of t-1; low if <= expanding 20% quantile as of t-1,prior_expanding_quantile,False,Volatility levels drift across years; t-1 expanding quantiles avoid future information.
+industry_crowding_regime,top5_industry_amount_share,high if >= expanding 80% quantile as of t-1; low if <= expanding 20% quantile as of t-1,prior_expanding_quantile,False,Industry crowding is relative to historical turnover structure and must not use future distribution.
+stock_concentration_regime,top100_amount_share,high if >= expanding 80% quantile as of t-1; low if <= expanding 20% quantile as of t-1,prior_expanding_quantile,False,Stock-level concentration is tracked as a diagnostic proxy for liquidity crowding.
