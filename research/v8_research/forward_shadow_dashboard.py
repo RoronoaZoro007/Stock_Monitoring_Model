@@ -1630,7 +1630,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         : (jobStatus === 'failed' ? '有错误' : (jobStatus === 'completed' ? '已完成' : '待启动 / 可查看历史'));
       $('overviewSubline').textContent = '卖出提示 ' + sellCount + ' 条；尾盘买入候选 ' + buyCount + ' 条；当前节点：' + stepDescription(live.current_step_id || '');
       if (data.data_source_mode === 'rerun_clean' && data.display_source === 'rerun_clean_empty') {{
-        $('overviewSubline').textContent = '重跑清爽视图：当前只展示 T-1 历史入场；T 日卖出、尾盘选股、步骤和日志等待本次 run 产生。';
+        $('overviewSubline').textContent = data.display_note || '重跑清爽视图：T 日结果等待本次 run 产生。';
       }}
       $('sellActionMeta').textContent = prior.prior_signal_date
         ? ('来自 T-1 信号 ' + prior.prior_signal_date + '，价格展示保留 2 位小数')
@@ -1822,17 +1822,23 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                         display_note = "展示最近一次 dashboard run 或最近状态文件对应的结果。"
                 elif data_source_mode == "rerun_clean":
                     ctx = current_job_context(base_output_root, public, trade_date=trade_date, active_job_id=active_job_id)
-                    prior_entry_root = base_output_root
                     plan_hint = "rebuild" if prior_input_policy == "force_rebuild" else "seed"
+                    prior_entry_root = None if prior_input_policy == "force_rebuild" else base_output_root
                     if ctx:
                         display_output_root = Path(ctx["output_root"])
                         display_source = str(ctx.get("source") or "rerun_clean_run")
                         display_run_id = str(ctx.get("run_id") or "")
-                        display_note = "T-1 入场从历史基线读取；T 日结果只读取本次 run 输出目录。"
+                        if prior_input_policy == "force_rebuild":
+                            display_note = "强制重建 T-1：T-1 入场和 T 日结果都只读取本次 run 输出目录。"
+                        else:
+                            display_note = "T-1 入场从历史基线读取；T 日结果只读取本次 run 输出目录。"
                     else:
                         display_output_root = base_output_root / "runs" / "__rerun_clean_waiting__"
                         display_source = "rerun_clean_empty"
-                        display_note = "尚未启动本次重跑或当前页面没有本次 job_id；除 T-1 历史入场外，T 日结果保持空白。"
+                        if prior_input_policy == "force_rebuild":
+                            display_note = "强制重建 T-1：尚未启动本次 run；T-1 入场、T 日卖出和尾盘选股都保持空白。"
+                        else:
+                            display_note = "尚未启动本次重跑或当前页面没有本次 job_id；除 T-1 历史入场外，T 日结果保持空白。"
                 payload = {
                     "default_trade_date": today_ymd(),
                     "requested_trade_date": trade_date,
