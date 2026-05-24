@@ -27,6 +27,51 @@ DEFAULT_OUTPUT_ROOT = ROOT / "reports" / "tushare" / "v8_forward_shadow"
 DEFAULT_LOG_DIR = ROOT / "logs" / "forward_shadow_dashboard"
 BEIJING_TZ = timezone(timedelta(hours=8))
 MIN_TRADE_DATE = "20260521"
+DEFAULT_STEP_PLAN: list[tuple[str, str]] = [
+    ("prepare_baseline", "07:30:00"),
+    ("auction_guard_0925", "09:25:30"),
+    ("fetch_exit_0935_bar", "09:35:05"),
+    ("exit_check_0935", "09:35:50"),
+    ("fetch_exit_0940_bar", "09:40:05"),
+    ("exit_exec_0940", "09:40:50"),
+    ("fetch_exit_0945_bar", "09:45:05"),
+    ("exit_check_0945", "09:45:50"),
+    ("fetch_exit_0950_bar", "09:50:05"),
+    ("exit_exec_0950", "09:50:50"),
+    ("fetch_exit_1000_bar", "10:00:05"),
+    ("exit_check_1000", "10:00:50"),
+    ("fetch_exit_1005_bar", "10:05:05"),
+    ("exit_exec_1005", "10:05:50"),
+    ("fetch_exit_1025_bar", "10:25:05"),
+    ("exit_prealert_1025", "10:25:50"),
+    ("fetch_exit_1030_bar", "10:30:05"),
+    ("exit_default_1030", "10:30:50"),
+    ("fetch_tail_until_1430", "14:30:00"),
+    ("fetch_tail_1435_bar", "14:35:05"),
+    ("fetch_tail_1440_bar", "14:40:05"),
+    ("fetch_tail_1445_bar", "14:45:05"),
+    ("fetch_tail_1450_bar", "14:50:05"),
+    ("build_forward_features", "14:50:40"),
+    ("build_score_matrix", "14:51:20"),
+    ("freeze_signals", "14:51:50"),
+    ("fetch_tail_1455_bar", "14:55:05"),
+    ("record_entry_1455_vwap", "14:55:50"),
+    ("fetch_tail_1500_bar", "15:00:05"),
+]
+OPTIONAL_PRIOR_STEP_PLAN: list[tuple[str, str]] = [
+    ("prior_reconstruction_skipped", "07:35:00"),
+    ("prior_auction_guard", "07:40:00"),
+    ("prior_fetch_until_1430", "07:41:00"),
+    ("prior_fetch_1435", "07:42:00"),
+    ("prior_fetch_1440", "07:42:00"),
+    ("prior_fetch_1445", "07:42:00"),
+    ("prior_fetch_1450", "07:42:00"),
+    ("prior_fetch_1455", "07:42:00"),
+    ("prior_build_features", "07:45:00"),
+    ("prior_build_score", "07:46:00"),
+    ("prior_freeze_signals", "07:47:00"),
+    ("prior_record_entry", "07:48:00"),
+]
 
 
 def bj_now() -> datetime:
@@ -87,6 +132,21 @@ def read_csv_rows(path: Path, max_rows: int = 200) -> list[dict[str, str]]:
     if max_rows and len(rows) > max_rows:
         return rows[-max_rows:]
     return rows
+
+
+def parse_bj_datetime(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(BEIJING_TZ)
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=BEIJING_TZ)
+        return dt.astimezone(BEIJING_TZ)
+    except Exception:
+        return None
 
 
 def write_json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
@@ -489,6 +549,111 @@ def summarize_by_strategy(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     return sorted(out, key=lambda x: x["strategy_id"])
 
 
+def synthesize_step_progress(status_doc: dict[str, Any], completed_rows: list[dict[str, str]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    completed_by_step: dict[str, dict[str, str]] = {}
+    extra_rows: list[dict[str, str]] = []
+    current_step = str(status_doc.get("current_step_id") or "")
+    optional_ids = {step_id for step_id, _ in OPTIONAL_PRIOR_STEP_PLAN}
+    completed_ids = {row.get("step_id", "") for row in completed_rows}
+    use_prior_plan = bool(optional_ids.intersection(completed_ids) or current_step in optional_ids)
+    if use_prior_plan:
+        if "prior_reconstruction_skipped" in completed_ids or current_step == "prior_reconstruction_skipped":
+            active_prior_plan = [OPTIONAL_PRIOR_STEP_PLAN[0]]
+        else:
+            active_prior_plan = [item for item in OPTIONAL_PRIOR_STEP_PLAN if item[0] != "prior_reconstruction_skipped"]
+        plan = [DEFAULT_STEP_PLAN[0], *active_prior_plan, *DEFAULT_STEP_PLAN[1:]]
+    else:
+        plan = DEFAULT_STEP_PLAN
+    plan_ids = {step_id for step_id, _ in plan}
+    for row in completed_rows:
+        step_id = row.get("step_id", "")
+        if not step_id:
+            continue
+        if step_id in plan_ids and step_id not in completed_by_step:
+            completed_by_step[step_id] = row
+        elif step_id not in plan_ids:
+            extra_rows.append(row)
+
+    current_status = str(status_doc.get("status") or "")
+    status_updated = parse_bj_datetime(str(status_doc.get("updated_at_beijing") or ""))
+    current_elapsed = None
+    if current_step and current_status == "running" and status_updated:
+        current_elapsed = max(0.0, round((bj_now() - status_updated).total_seconds(), 1))
+
+    rows: list[dict[str, Any]] = []
+    for idx, (step_id, scheduled_time) in enumerate(plan, start=1):
+        completed = completed_by_step.get(step_id)
+        row: dict[str, Any] = {
+            "index": idx,
+            "step_id": step_id,
+            "scheduled_time": scheduled_time,
+            "status": "pending",
+            "duration_seconds": "",
+            "running_elapsed_seconds": "",
+            "return_code": "",
+            "message": "",
+        }
+        if completed:
+            row.update(
+                {
+                    "status": completed.get("status", "success"),
+                    "duration_seconds": completed.get("duration_seconds", ""),
+                    "return_code": completed.get("return_code", ""),
+                    "message": completed.get("message", ""),
+                }
+            )
+        elif step_id == current_step:
+            row["status"] = "waiting" if current_status == "waiting" else "running"
+            row["running_elapsed_seconds"] = current_elapsed if current_elapsed is not None else ""
+        rows.append(row)
+
+    for row in extra_rows:
+        rows.append(
+            {
+                "index": len(rows) + 1,
+                "step_id": row.get("step_id", ""),
+                "scheduled_time": row.get("scheduled_time", ""),
+                "status": row.get("status", "success"),
+                "duration_seconds": row.get("duration_seconds", ""),
+                "running_elapsed_seconds": "",
+                "return_code": row.get("return_code", ""),
+                "message": row.get("message", ""),
+            }
+        )
+
+    if current_step and current_step not in {str(row.get("step_id")) for row in rows}:
+        rows.append(
+            {
+                "index": len(rows) + 1,
+                "step_id": current_step,
+                "scheduled_time": status_doc.get("current_scheduled_time", ""),
+                "status": "waiting" if current_status == "waiting" else "running",
+                "duration_seconds": "",
+                "running_elapsed_seconds": current_elapsed if current_elapsed is not None else "",
+                "return_code": "",
+                "message": status_doc.get("message", ""),
+            }
+        )
+
+    completed_steps = int(status_doc.get("completed_steps") or len([r for r in completed_rows if r.get("status") == "success"]))
+    status_total = status_doc.get("total_steps")
+    try:
+        total_steps = int(status_total) if status_total not in {None, ""} else len(plan)
+    except Exception:
+        total_steps = len(plan)
+    if completed_steps > total_steps:
+        total_steps = completed_steps
+    pct = round(completed_steps / total_steps * 100, 1) if total_steps else 0.0
+    progress = {
+        "completed_steps": completed_steps,
+        "total_steps": total_steps,
+        "progress_pct": pct,
+        "current_step_elapsed_seconds": current_elapsed,
+        "current_step_id": current_step,
+    }
+    return rows, progress
+
+
 def line_short(value: str) -> str:
     mapping = {
         "S0_v7_original_top10": "S0",
@@ -632,6 +797,7 @@ def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Pa
 
     status_doc = read_json(status_path)
     steps = read_csv_rows(steps_path, max_rows=120)
+    step_progress, progress = synthesize_step_progress(status_doc, steps)
     candidates = [r for r in read_csv_rows(candidate_path, max_rows=10000) if str(r.get("trade_date", "")) == trade_date]
     signals = read_csv_rows(signals_path, max_rows=1000)
     entries = read_csv_rows(entry_path, max_rows=1000)
@@ -651,7 +817,9 @@ def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Pa
     exists = {name: Path(path).exists() for name, path in files.items()}
     return {
         "live_status": status_doc,
-        "steps": steps,
+        "steps": step_progress,
+        "raw_steps": steps,
+        "progress": progress,
         "candidate_status": candidates,
         "signal_summary": summarize_by_strategy(signals),
         "entry_counts": entry_counts,
@@ -784,10 +952,12 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .pill.ok {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .pill.bad {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
     .pill.warn {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
-    .metrics {{ display: grid; grid-template-columns: 1.2fr 1.8fr repeat(4, minmax(110px, 1fr)); gap: 10px; }}
+    .metrics {{ display: grid; grid-template-columns: 1.2fr 1.8fr repeat(5, minmax(110px, 1fr)); gap: 10px; }}
     .metric {{ border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #fcfcfd; min-height: 70px; }}
     .metric span {{ display: block; color: var(--muted); font-size: 12px; }}
     .metric strong {{ display: block; font-size: 17px; line-height: 1.3; margin-top: 4px; word-break: break-word; }}
+    .progress-track {{ height: 8px; background: #eaecf0; border-radius: 999px; overflow: hidden; }}
+    .progress-fill {{ height: 100%; width: 0%; background: var(--accent); transition: width .25s ease; }}
     .hero {{
       display: grid;
       grid-template-columns: minmax(260px, 1fr) 1.2fr 1.2fr;
@@ -815,6 +985,11 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     td.num, th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
     .line-tags {{ display: flex; flex-wrap: wrap; gap: 4px; }}
     .line-tag {{ display: inline-flex; padding: 2px 6px; border-radius: 999px; background: #eef4ff; color: #194185; border: 1px solid #c7d7fe; font-size: 12px; }}
+    .status-chip {{ display: inline-flex; border-radius: 999px; padding: 2px 8px; font-size: 12px; border: 1px solid #d0d5dd; background: #f2f4f7; color: #344054; }}
+    .status-chip.success {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
+    .status-chip.running {{ background: #eff8ff; color: #175cd3; border-color: #b2ddff; }}
+    .status-chip.waiting {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
+    .status-chip.failed {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
     pre {{
       white-space: pre-wrap;
       overflow: auto;
@@ -986,9 +1161,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         <div class="metric"><span>当前节点</span><strong id="currentStep">-</strong></div>
         <div class="metric"><span>正在做什么</span><strong id="currentStepMeaning">-</strong></div>
         <div class="metric"><span>节点状态</span><strong id="runnerState">-</strong></div>
-        <div class="metric"><span>已完成</span><strong id="completedSteps">0</strong></div>
+        <div class="metric"><span>完成进度</span><strong id="completedSteps">0 / 29</strong></div>
+        <div class="metric"><span>当前耗时</span><strong id="currentElapsed">-</strong></div>
         <div class="metric"><span>总节点</span><strong id="totalSteps">-</strong></div>
         <div class="metric"><span>更新时间</span><strong id="updatedAt">-</strong></div>
+      </div>
+      <div class="progress-track" aria-label="任务进度">
+        <div id="progressBar" class="progress-fill"></div>
       </div>
     </section>
 
@@ -1130,6 +1309,14 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       const n = asNumber(v);
       return n === null ? '-' : n.toFixed(digits);
     }}
+    function fmtDuration(v) {{
+      const n = asNumber(v);
+      if (n === null) return '-';
+      if (n < 60) return n.toFixed(1) + 's';
+      const minutes = Math.floor(n / 60);
+      const seconds = Math.round(n % 60);
+      return minutes + 'm ' + seconds + 's';
+    }}
     function isTrue(v) {{
       return String(v ?? '').toLowerCase() === 'true' || String(v ?? '') === '1';
     }}
@@ -1141,7 +1328,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       if (type === 'pct' || lower.includes('return')) return fmtPct(value);
       if (type === 'score' || lower.includes('score')) return fmtScore(value);
       if (type === 'weight' || lower === 'weight') return fmtWeight(value);
-      if (type === 'seconds') return fmtNumber(value, 1);
+      if (type === 'seconds') return fmtDuration(value);
+      if (type === 'status') return '<span class="status-chip ' + esc(String(value || 'pending')) + '">' + esc(value || 'pending') + '</span>';
       if (type === 'number') return fmtNumber(value, col.digits || 0);
       return esc(value === undefined || value === null || value === '' ? '-' : value);
     }}
@@ -1223,6 +1411,11 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         prior_reconstruction_skipped: '前一交易日纸面买入记录已存在，跳过重建',
         prior_auction_guard: '补齐前一交易日集合竞价侧数据',
         prior_fetch_until_1430: '补齐前一交易日 14:30 前分钟线',
+        prior_fetch_1435: '补齐前一交易日 14:35 增量 bar',
+        prior_fetch_1440: '补齐前一交易日 14:40 增量 bar',
+        prior_fetch_1445: '补齐前一交易日 14:45 增量 bar',
+        prior_fetch_1450: '补齐前一交易日 14:50 增量 bar',
+        prior_fetch_1455: '补齐前一交易日 14:55 入场 bar',
         prior_build_features: '重建前一交易日尾盘特征',
         prior_build_score: '重建前一交易日 v7 score',
         prior_freeze_signals: '重建前一交易日四线路纸面信号',
@@ -1296,6 +1489,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       const job = data.job;
       const artifacts = data.artifacts || {{}};
       const live = artifacts.live_status || {{}};
+      const progress = artifacts.progress || {{}};
       const prior = artifacts.prior_context || {{}};
       const today = artifacts.today_context || {{}};
       const jobStatus = job ? job.status : 'idle';
@@ -1311,8 +1505,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('currentStep').textContent = live.current_step_id || '-';
       $('currentStepMeaning').textContent = stepDescription(live.current_step_id || '');
       $('runnerState').textContent = live.status || '-';
-      $('completedSteps').textContent = live.completed_steps ?? 0;
-      $('totalSteps').textContent = live.total_steps ?? '-';
+      const completed = progress.completed_steps ?? live.completed_steps ?? 0;
+      const total = progress.total_steps ?? live.total_steps ?? 29;
+      const pct = progress.progress_pct ?? (total ? Math.round(completed / total * 1000) / 10 : 0);
+      $('completedSteps').textContent = completed + ' / ' + total + ' (' + pct + '%)';
+      $('currentElapsed').textContent = fmtDuration(progress.current_step_elapsed_seconds);
+      $('totalSteps').textContent = total;
+      $('progressBar').style.width = Math.max(0, Math.min(100, Number(pct) || 0)) + '%';
       $('updatedAt').textContent = live.updated_at_beijing || '-';
 
       const sellRows = prior.sell_recommendations?.length ? prior.sell_recommendations : (prior.sell_execution || []);
@@ -1384,7 +1583,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         {{key:'line', label:'线路'}}, {{key:'rank', label:'rank', type:'number'}}, {{key:'code', label:'股票'}}, {{key:'name', label:'名称'}}, {{key:'score', label:'score', type:'score'}}, {{key:'expected_entry_time', label:'建议买入'}}, {{key:'entry_vwap', label:'买入VWAP', type:'price'}}, {{key:'entry_status', label:'状态'}}, {{key:'weight', label:'权重', type:'weight'}}
       ]);
       $('stepsTable').innerHTML = table(artifacts.steps || [], [
-        {{key:'step_id', label:'step'}}, {{key:'scheduled_time', label:'scheduled'}}, {{key:'status', label:'status'}}, {{key:'duration_seconds', label:'seconds', type:'seconds'}}, {{key:'return_code', label:'rc', type:'number'}}
+        {{key:'index', label:'#', type:'number'}},
+        {{key:'step_id', label:'step'}},
+        {{key:'scheduled_time', label:'scheduled'}},
+        {{key:'status', label:'status', type:'status'}},
+        {{key:'running_elapsed_seconds', label:'running', type:'seconds'}},
+        {{key:'duration_seconds', label:'finished', type:'seconds'}},
+        {{key:'return_code', label:'rc', type:'number'}}
       ]);
       const files = Object.entries(artifacts.files || {{}}).map(([name, path]) => ({{name, path, exists: artifacts.file_exists?.[name] ? 'yes' : 'no'}}));
       $('filesTable').innerHTML = table(files, ['name','exists','path']);
