@@ -1,0 +1,6 @@
+api_name,purpose,expected_open_dates,available_dates,missing_dates,first_missing,last_missing,first_available,last_available
+daily,daily OHLCV and amount,2032,522,1510,20180227,20240520,20180102,20260522
+adj_factor,adjustment factor,2032,37,1995,20180301,20260522,20180102,20180228
+daily_basic,"market cap, float shares, turnover and valuation fields",2032,35,1997,20180124,20260522,20180102,20180227
+suspend_d,suspension status,2032,35,1997,20180124,20260522,20180102,20180227
+stk_limit,daily limit up/down prices,2032,35,1997,20180124,20260522,20180102,20180227

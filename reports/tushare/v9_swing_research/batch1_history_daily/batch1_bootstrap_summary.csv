@@ -1,0 +1,4 @@
+api_name,status,rows,path,seconds,error
+stock_basic,exists,5847,/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/data_tushare/raw/bootstrap/stock_basic_all_status.parquet,0.0,
+trade_cal,exists,3064,/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/data_tushare/raw/bootstrap/trade_cal_20180101_20260522.parquet,0.0,
+namechange,exists,5250,/Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/data_tushare/raw/bootstrap/namechange_20180101_20260522.parquet,0.0,
