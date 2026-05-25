@@ -593,6 +593,21 @@ Handoff：
 - 当前不建议进入 Batch5A，也不建议训练更复杂模型。
 - 下一步优先做简单规则的成本、容量、弱市和集中度鲁棒性审计，或另开 Batch4A amendment 冻结不同训练目标。
 
+### Stage 7D Batch 4C Simple Rule Robustness and Capacity
+
+输出目录：`reports/tushare/v9_swing_research/batch4C_simple_rule_robustness_capacity/`
+
+执行边界：
+
+- 不训练模型、不调参、不新增规则、不修改特征/标签/horizon/TopN。
+- 只审计 Batch3D minimum-to-beat 简单规则。
+- 输出成本敏感性、容量矩阵、市场状态、年度稳定性、收益集中度、行业/个股集中度和执行风险代理。
+
+结论：
+
+- 简单规则虽然强于 Batch4B 轻量模型，但需要接受成本、容量、弱市和集中度审计后，才可能进入更深的纸面流程设计。
+- 当前仍不建议恢复复杂模型训练，也不建议直接 forward tracking。
+
 ### Step 5A: 鲁棒性和暴露审计
 
 目标：判断模型是否只是数据挖掘、牛市 beta、题材抱团或流动性幻觉。
@@ -749,7 +764,7 @@ handoff 文件必须至少包含：
 下一步仍不应直接训练模型。
 推荐执行：
 
-> Batch 4B Review completed; do not enter Batch 5A with current lightweight models
+> Batch 4C completed; review simple-rule robustness/capacity before any deeper audit
 
 原因：
 
