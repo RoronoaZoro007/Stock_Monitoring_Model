@@ -1012,7 +1012,33 @@ def build_dependency_cards(rows: list[dict[str, Any]], overall_status: str) -> l
     return cards
 
 
-def load_dependency_status(output_root: Path, trade_date: str) -> dict[str, Any]:
+def empty_dependency_status(source_label: str, source_note: str) -> dict[str, Any]:
+    return {
+        "overall_status": "not_started",
+        "ui_state": "neutral",
+        "headline": "尚未启动本次依赖检查",
+        "action": "启动任务后会显示本次预检结果；当前不会混入历史依赖状态。",
+        "generated_time_beijing": "",
+        "prior_trade_date_for_probe": "",
+        "checks": [],
+        "issues": [],
+        "cards": [],
+        "file": "",
+        "exists": False,
+        "source_label": source_label,
+        "source_note": source_note,
+    }
+
+
+def load_dependency_status(
+    output_root: Path,
+    trade_date: str,
+    source_label: str = "历史已有数据",
+    source_note: str = "读取已落地的 preflight/data_guards 文件，不代表当前刚刚重新探活。",
+    suppress_history: bool = False,
+) -> dict[str, Any]:
+    if suppress_history:
+        return empty_dependency_status(source_label, source_note)
     preflight_path = output_root / "preflight" / f"{trade_date}_preflight.json"
     preflight = read_json(preflight_path)
     checks = preflight.get("checks") or []
@@ -1067,10 +1093,20 @@ def load_dependency_status(output_root: Path, trade_date: str) -> dict[str, Any]
         "cards": build_dependency_cards(rows, overall_status),
         "file": str(preflight_path),
         "exists": preflight_path.exists(),
+        "source_label": source_label,
+        "source_note": source_note,
     }
 
 
-def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Path | None = None, plan_hint: str = "auto") -> dict[str, Any]:
+def dashboard_artifacts(
+    output_root: Path,
+    trade_date: str,
+    prior_entry_root: Path | None = None,
+    plan_hint: str = "auto",
+    dependency_source_label: str = "历史已有数据",
+    dependency_source_note: str = "读取已落地的 preflight/data_guards 文件，不代表当前刚刚重新探活。",
+    suppress_dependency_history: bool = False,
+) -> dict[str, Any]:
     live_dir = output_root / "live_runner"
     status_path = live_dir / f"{trade_date}_live_runner_status.json"
     steps_path = live_dir / f"{trade_date}_live_runner_steps.csv"
@@ -1110,7 +1146,13 @@ def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Pa
         "entry_counts": entry_counts,
         "prior_context": load_prior_context(output_root, trade_date, prior_entry_root=prior_entry_root),
         "today_context": load_today_context(output_root, trade_date),
-        "dependency_status": load_dependency_status(output_root, trade_date),
+        "dependency_status": load_dependency_status(
+            output_root,
+            trade_date,
+            source_label=dependency_source_label,
+            source_note=dependency_source_note,
+            suppress_history=suppress_dependency_history,
+        ),
         "files": files,
         "file_exists": exists,
     }
@@ -1319,6 +1361,21 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .dependency-card-purpose {{ color: var(--muted); font-size: 12px; margin-top: 6px; }}
     .dependency-card-summary {{ margin-top: 8px; color: var(--text); font-size: 12px; }}
     .dependency-section-title {{ font-size: 13px; color: var(--muted); font-weight: 700; margin: 12px 0 4px; }}
+    .source-badge {{
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: #eef4ff;
+      color: #194185;
+      border: 1px solid #c7d7fe;
+      font-size: 12px;
+      margin-right: 8px;
+    }}
+    .source-note {{
+      color: var(--muted);
+      font-size: 12px;
+    }}
     .table-wrap {{ overflow-x: auto; }}
     table {{ width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }}
     th, td {{ border-bottom: 1px solid var(--line); padding: 8px 7px; text-align: left; vertical-align: top; }}
@@ -1981,9 +2038,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('candidateTable').innerHTML = table(artifacts.candidate_status || [], [
         {{key:'strategy_id', label:'line_id'}}, {{key:'tail_down_flag', label:'tail_down'}}, {{key:'selected_count', label:'selected', type:'number'}}, {{key:'no_trade_reason', label:'no_trade'}}
       ]);
-      $('dependencyMeta').textContent = deps.exists
+      const depSource = deps.source_label || '未标注来源';
+      const depSourceNote = deps.source_note || '';
+      const depTime = deps.exists
         ? ('最近预检：' + (deps.generated_time_beijing || '-') + '；探活参考交易日：' + (deps.prior_trade_date_for_probe || '-') + '；原始 overall=' + (deps.overall_status || '-'))
         : '尚未生成启动预检文件。';
+      $('dependencyMeta').innerHTML = '<span class="source-badge">数据来源：' + esc(depSource) + '</span>' +
+        '<span class="source-note">' + esc(depTime + (depSourceNote ? '；' + depSourceNote : '')) + '</span>';
       $('dependencyBanner').innerHTML = renderDependencyBanner(deps);
       $('dependencyCards').innerHTML = renderDependencyCards(deps.cards || []);
       $('dependencyIssues').innerHTML = table(deps.issues || [], [
@@ -2152,6 +2213,9 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                 display_source = "history"
                 display_note = "展示所选日期在当前输出目录下已有的历史结果。"
                 display_run_id = ""
+                dependency_source_label = "历史落地结果"
+                dependency_source_note = "读取所选日期已保存的 preflight/data_guards 文件；不是当前刚刚重新探活。"
+                suppress_dependency_history = False
                 if data_source_mode == "latest_run":
                     ctx = latest_run_context(base_output_root, public, include_base=True)
                     if ctx:
@@ -2160,6 +2224,8 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                         display_source = str(ctx.get("source") or "latest_run")
                         display_run_id = str(ctx.get("run_id") or "")
                         display_note = "展示最近一次 dashboard run 或最近状态文件对应的结果。"
+                        dependency_source_label = "最近一次运行结果"
+                        dependency_source_note = "读取最近一次运行目录里的依赖检查结果；是否实时取决于该 run 的启动时间。"
                 elif data_source_mode == "rerun_clean":
                     ctx = current_job_context(base_output_root, public, trade_date=trade_date, active_job_id=active_job_id)
                     plan_hint = "rebuild" if prior_input_policy == "force_rebuild" else "seed"
@@ -2168,6 +2234,8 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                         display_output_root = Path(ctx["output_root"])
                         display_source = str(ctx.get("source") or "rerun_clean_run")
                         display_run_id = str(ctx.get("run_id") or "")
+                        dependency_source_label = "本次重跑输出"
+                        dependency_source_note = "只读取当前 run_id 输出目录里的依赖检查结果。"
                         if prior_input_policy == "force_rebuild":
                             display_note = "强制重建 T-1：T-1 入场和 T 日结果都只读取本次 run 输出目录。"
                         else:
@@ -2175,10 +2243,18 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     else:
                         display_output_root = base_output_root / "runs" / "__rerun_clean_waiting__"
                         display_source = "rerun_clean_empty"
+                        dependency_source_label = "本次重跑尚未启动"
+                        dependency_source_note = "清爽视图启动前不读取历史依赖结果。"
+                        suppress_dependency_history = True
                         if prior_input_policy == "force_rebuild":
                             display_note = "强制重建 T-1：尚未启动本次 run；T-1 入场、T 日卖出和尾盘选股都保持空白。"
                         else:
                             display_note = "尚未启动本次重跑或当前页面没有本次 job_id；除 T-1 历史入场外，T 日结果保持空白。"
+                elif public and public.get("meta") and str(public["meta"].get("trade_date") or "") == trade_date:
+                    meta_output_root = resolve_output_root(str(public["meta"].get("output_root") or ""), base_output_root)
+                    if meta_output_root == display_output_root:
+                        dependency_source_label = "当前页面任务输出"
+                        dependency_source_note = "读取当前 dashboard 任务输出目录；任务启动后会刷新为本次预检结果。"
                 payload = {
                     "default_trade_date": today_ymd(),
                     "requested_trade_date": trade_date,
@@ -2199,7 +2275,15 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     },
                     "env": env_health(send_notifications=True),
                     "job": public,
-                    "artifacts": dashboard_artifacts(display_output_root, display_trade_date, prior_entry_root=prior_entry_root, plan_hint=plan_hint),
+                    "artifacts": dashboard_artifacts(
+                        display_output_root,
+                        display_trade_date,
+                        prior_entry_root=prior_entry_root,
+                        plan_hint=plan_hint,
+                        dependency_source_label=dependency_source_label,
+                        dependency_source_note=dependency_source_note,
+                        suppress_dependency_history=suppress_dependency_history,
+                    ),
                 }
                 write_json_response(self, HTTPStatus.OK, payload)
                 return
