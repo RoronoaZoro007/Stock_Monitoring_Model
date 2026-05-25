@@ -1,0 +1,44 @@
+batch: batch4E_full_rule_audit
+training_enabled: false
+rule_search_enabled: false
+target_rules:
+  - low_stock_ret_60d
+  - combo_low_liquidity_weak_momentum
+exit_policies:
+  - planned_t5_close
+  - delay_if_exit_blocked_max5
+max_exit_delay_trading_days: 5
+exit_delay_trigger: exit_suspend_flag_5d or exit_limit_down_close_flag_5d
+exit_delay_search: next tradable daily close where suspend_flag=false and limit_down_close_flag=false
+unresolved_delay_policy: mark at last finite close inside max-delay window and flag unresolved
+monthly_ledger: grouped by calendar month from overlapping daily capital ledger
+weak_sample_policy: use frozen trend_regime=weak signal days; do not create new regime thresholds
+scenarios:
+  - no_cost_full_fill_1m:
+      capital_yuan: 1000000.0
+      participation_cap: None
+      roundtrip_cost_bps: 0.0
+      capacity_reference: none
+      entry_limit_policy: allow_daily_proxy
+      description: Diagnostic no-cost full-fill ledger.
+  - base_1m_5pct_signal_40bps:
+      capital_yuan: 1000000.0
+      participation_cap: 0.05
+      roundtrip_cost_bps: 40.0
+      capacity_reference: signal_amount_yuan
+      entry_limit_policy: block_entry_limit_or_suspend
+      description: Primary execution-stress ledger: 1m capital, 5% signal-day amount cap, 40bps roundtrip cost.
+  - high_cost_1m_5pct_signal_100bps:
+      capital_yuan: 1000000.0
+      participation_cap: 0.05
+      roundtrip_cost_bps: 100.0
+      capacity_reference: signal_amount_yuan
+      entry_limit_policy: block_entry_limit_or_suspend
+      description: High-cost stress ledger: 1m capital, 5% signal-day amount cap, 100bps roundtrip cost.
+  - strict_5m_1pct_signal_40bps:
+      capital_yuan: 5000000.0
+      participation_cap: 0.01
+      roundtrip_cost_bps: 40.0
+      capacity_reference: signal_amount_yuan
+      entry_limit_policy: block_entry_limit_or_suspend
+      description: Strict capacity stress: 5m capital, 1% signal-day amount cap, 40bps roundtrip cost.

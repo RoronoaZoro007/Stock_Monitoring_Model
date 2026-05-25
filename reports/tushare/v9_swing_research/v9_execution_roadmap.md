@@ -788,3 +788,11 @@ handoff 文件必须至少包含：
 - 10d 简单规则虽然收益诊断强，但最大回撤接近 -99%，必须在 Batch 4A 先冻结训练周期、标签、特征、切分、成本容量审计和最低基准。
 - 概念/题材特征仍未锁定 point-in-time 数据源，Batch 4A 不得把它们放入训练特征。
 - Batch 4A 已冻结计划；真正训练必须严格按 Batch 4A 配置另行执行 Batch 4B，不得在训练中改 horizon、特征或样本。
+
+## Batch 4E Full Simple Rule Audit
+
+- Status: completed.
+- Output directory: `reports/tushare/v9_swing_research/batch4E_full_rule_audit/`.
+- Scope: exit-delay simulation, monthly cash ledger and weak-market sample validation for `low_stock_ret_60d` and `combo_low_liquidity_weak_momentum`.
+- Gate: `review_required_no_forward_tracking`.
+- Next: decision review only; no complex model training and no live readiness claim.
