@@ -24,6 +24,7 @@ from tushare_data_pipeline import TushareError, TushareProxyClient, TushareRateL
 
 DEFAULT_OUTPUT_ROOT = ROOT / "reports" / "tushare" / "v8_forward_shadow"
 DEFAULT_RANK_FILE = ROOT / "data_tushare" / "manifests" / "liquid_top3000_20251120_20260213.csv"
+LOCKED_RANK_FILE = ROOT / "locked_artifacts" / "v7_cap20_strong_label_003" / "config" / "liquid_top3000_20251120_20260213.csv"
 DEFAULT_MINUTE_DIR = ROOT / "data_tushare" / "raw" / "stk_mins" / "freq=5min"
 DEFAULT_TRADE_CAL = ROOT / "data_tushare" / "raw" / "bootstrap" / "trade_cal.parquet"
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -117,6 +118,14 @@ def read_probe_codes(rank_file: Path, count: int = 5) -> list[str]:
     return rank["ts_code"].dropna().astype(str).drop_duplicates().head(count).tolist()
 
 
+def resolve_probe_rank_file(rank_file: Path) -> tuple[Path, str]:
+    if rank_file.exists():
+        return rank_file, "requested_rank_file"
+    if LOCKED_RANK_FILE.exists():
+        return LOCKED_RANK_FILE, "locked_artifact_fallback"
+    return rank_file, "missing"
+
+
 def check_tcp_tls(url: str, name: str, severity_on_fail: str, timeout: int) -> dict[str, Any]:
     started = time.monotonic()
     parsed = urlparse(url)
@@ -166,7 +175,8 @@ def check_tushare_trade_cal(token: str, trade_date: str, timeout: int) -> dict[s
 
 def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path, timeout: int) -> dict[str, Any]:
     started = time.monotonic()
-    codes = read_probe_codes(rank_file)
+    probe_rank_file, rank_source = resolve_probe_rank_file(rank_file)
+    codes = read_probe_codes(probe_rank_file)
     if not prior:
         return check_result(
             "tushare_proxy_stk_mins_api",
@@ -174,6 +184,9 @@ def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path,
             "fatal",
             started,
             role="open_exit_and_tail_realtime_bars",
+            requested_rank_file=str(rank_file),
+            probe_rank_file=str(probe_rank_file),
+            rank_source=rank_source,
             impact="cannot verify required live minute provider because prior trade date is unavailable",
         )
     if not codes:
@@ -183,6 +196,9 @@ def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path,
             "fatal",
             started,
             role="open_exit_and_tail_realtime_bars",
+            requested_rank_file=str(rank_file),
+            probe_rank_file=str(probe_rank_file),
+            rank_source=rank_source,
             impact="cannot verify required live minute provider because rank file is unavailable",
         )
     client = TushareProxyClient(token, get_proxy_url(), timeout=timeout)
@@ -204,6 +220,9 @@ def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path,
             started,
             base_url=get_proxy_url(),
             probe_trade_date=prior,
+            requested_rank_file=str(rank_file),
+            probe_rank_file=str(probe_rank_file),
+            rank_source=rank_source,
             probe_codes=len(codes),
             rows=int(len(df)),
             role="open_exit_and_tail_realtime_bars",
@@ -217,6 +236,9 @@ def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path,
             started,
             base_url=get_proxy_url(),
             probe_trade_date=prior,
+            requested_rank_file=str(rank_file),
+            probe_rank_file=str(probe_rank_file),
+            rank_source=rank_source,
             probe_codes=len(codes),
             role="open_exit_and_tail_realtime_bars",
             impact="required provider is unavailable; stop today's paper runner and restart only after the provider recovers",
