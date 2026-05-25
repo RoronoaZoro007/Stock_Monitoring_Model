@@ -61,6 +61,7 @@ DEFAULT_STEP_PLAN: list[tuple[str, str]] = [
 ]
 OPTIONAL_PRIOR_STEP_PLAN: list[tuple[str, str]] = [
     ("seed_prior_artifacts", "07:35:00"),
+    ("prior_settlement_skipped", "07:36:00"),
     ("prior_reconstruction_skipped", "07:35:00"),
     ("prior_auction_guard", "07:40:00"),
     ("prior_fetch_until_1430", "07:41:00"),
@@ -236,7 +237,7 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     preserve_snapshot = bool(payload.get("preserve_run_snapshot", False))
     use_run_id_output_dir = bool(payload.get("use_run_id_output_dir", False))
     force_refresh_minutes = bool(payload.get("force_refresh_minutes", False))
-    prior_input_policy = str(payload.get("prior_input_policy") or "reuse_or_rebuild")
+    prior_input_policy = str(payload.get("prior_input_policy") or "reuse_only")
     if prior_input_policy not in {"reuse_or_rebuild", "reuse_only", "force_rebuild"}:
         raise ValueError("prior_input_policy must be reuse_or_rebuild, reuse_only, or force_rebuild")
     job_id = safe_label(str(payload.get("_job_id") or uuid.uuid4().hex[:12]))
@@ -606,7 +607,9 @@ def synthesize_step_progress(
     elif plan_hint == "rebuild":
         plan = [*DEFAULT_STEP_PLAN[:2], *prior_rebuild_plan, *DEFAULT_STEP_PLAN[2:]]
     elif use_prior_plan:
-        if "prior_reconstruction_skipped" in completed_ids or current_step == "prior_reconstruction_skipped":
+        if "prior_settlement_skipped" in completed_ids or current_step == "prior_settlement_skipped":
+            active_prior_plan = [optional_by_id["seed_prior_artifacts"], optional_by_id["prior_settlement_skipped"]]
+        elif "prior_reconstruction_skipped" in completed_ids or current_step == "prior_reconstruction_skipped":
             active_prior_plan = [optional_by_id["prior_reconstruction_skipped"]]
         elif "seed_prior_artifacts" in completed_ids and not any(step.startswith("prior_") for step in completed_ids):
             active_prior_plan = prior_seed_plan
@@ -1523,8 +1526,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           <div>
             <label for="priorInputPolicy">T-1 输入策略</label>
             <select id="priorInputPolicy">
-              <option value="reuse_or_rebuild" selected>复用已冻结 T-1，缺失自动重建</option>
-              <option value="reuse_only">只复用已冻结 T-1，失败中止</option>
+              <option value="reuse_only" selected>只复用已冻结 T-1，缺失跳过结算（推荐）</option>
+              <option value="reuse_or_rebuild">复用已冻结 T-1，缺失自动重建（诊断）</option>
               <option value="force_rebuild">强制重建 T-1</option>
             </select>
           </div>
@@ -1883,6 +1886,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         preflight_downstream: '启动预检：检查 Tushare、分钟线接口、WxPusher 与日历 fallback 连通性',
         prepare_baseline: '检查交易日历、股票池、T-1 日线与基础数据',
         seed_prior_artifacts: '检查 T-1 冻结信号/入场文件',
+        prior_settlement_skipped: 'T-1 冻结文件缺失，跳过前日结算',
         prior_reconstruction_skipped: '前一交易日纸面买入记录已存在，跳过重建',
         prior_auction_guard: '补齐前一交易日集合竞价侧数据',
         prior_fetch_until_1430: '补齐前一交易日 14:30 前分钟线',
@@ -2203,9 +2207,9 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                 if data_source_mode not in {"history", "latest_run", "rerun_clean"}:
                     data_source_mode = "history"
                 active_job_id = str((params.get("active_job_id") or [""])[0] or "")
-                prior_input_policy = str((params.get("prior_input_policy") or ["reuse_or_rebuild"])[0] or "reuse_or_rebuild")
+                prior_input_policy = str((params.get("prior_input_policy") or ["reuse_only"])[0] or "reuse_only")
                 if prior_input_policy not in {"reuse_or_rebuild", "reuse_only", "force_rebuild"}:
-                    prior_input_policy = "reuse_or_rebuild"
+                    prior_input_policy = "reuse_only"
                 display_trade_date = trade_date
                 display_output_root = base_output_root
                 prior_entry_root: Path | None = None
@@ -2239,7 +2243,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                         if prior_input_policy == "force_rebuild":
                             display_note = "强制重建 T-1：T-1 入场和 T 日结果都只读取本次 run 输出目录。"
                         else:
-                            display_note = "T-1 入场从历史基线读取；T 日结果只读取本次 run 输出目录。"
+                            display_note = "T-1 入场只从已冻结历史基线读取；缺失则跳过前日结算，T 日结果只读取本次 run 输出目录。"
                     else:
                         display_output_root = base_output_root / "runs" / "__rerun_clean_waiting__"
                         display_source = "rerun_clean_empty"
@@ -2249,7 +2253,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                         if prior_input_policy == "force_rebuild":
                             display_note = "强制重建 T-1：尚未启动本次 run；T-1 入场、T 日卖出和尾盘选股都保持空白。"
                         else:
-                            display_note = "尚未启动本次重跑或当前页面没有本次 job_id；除 T-1 历史入场外，T 日结果保持空白。"
+                            display_note = "尚未启动本次重跑或当前页面没有本次 job_id；只展示已冻结 T-1 历史入场，缺失不会事后重建。"
                 elif public and public.get("meta") and str(public["meta"].get("trade_date") or "") == trade_date:
                     meta_output_root = resolve_output_root(str(public["meta"].get("output_root") or ""), base_output_root)
                     if meta_output_root == display_output_root:

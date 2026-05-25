@@ -1,0 +1,12 @@
+trade_date,strategy_id,candidate_id,code,name,original_v7_rank,score,paper_entry_status,expected_entry_time,entry_vwap,entry_amount,entry_price_source,weight,paper_tracking_only,generated_time_beijing
+20260522,S0_v7_original_top10,control_1,002540.SZ,亚太科技,1,0.502796047653433,entry_recorded,14:55,5.584921284634761,1773771.0,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,000501.SZ,武商集团,2,0.4977998229524505,entry_recorded,14:55,7.51167371090448,888631.0,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,003002.SZ,壶化股份,3,0.4971095312532252,entry_recorded,14:55,24.4846582278481,967144.0,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,603355.SH,莱克电气,4,0.4950226056770274,entry_recorded,14:55,29.887920410783057,4656538.0,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,002769.SZ,普路通,5,0.4895325985374998,entry_recorded,14:55,8.438183890577507,3331395.0,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,301043.SZ,绿岛风,6,0.4894941184663733,entry_recorded,14:55,52.074305555555554,749870.0,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,001221.SZ,悍高集团,7,0.4872572831660235,entry_recorded,14:55,54.82876494023905,1376202.0,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,301148.SZ,嘉戎技术,8,0.4853998048689774,entry_recorded,14:55,70.40556414219475,3780849.2,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,300542.SZ,新晨科技,9,0.4852596676285811,entry_recorded,14:55,14.812038288288289,3945927.0,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S0_v7_original_top10,control_1,300235.SZ,方直科技,10,0.4845008880969182,entry_recorded,14:55,13.133954753722795,2293188.5,raw_stk_mins_5min_bar_14:55_vwap,0.1,True,2026-05-24T19:55:15+08:00
+20260522,S1_U2_filter_only_no_refill,control_2,301148.SZ,嘉戎技术,8,0.4853998048689774,entry_recorded,14:55,70.40556414219475,3780849.2,raw_stk_mins_5min_bar_14:55_vwap,1.0,True,2026-05-24T19:55:15+08:00

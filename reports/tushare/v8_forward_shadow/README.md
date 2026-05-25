@@ -12,6 +12,19 @@ Expected daily outputs:
 - `daily_ledgers/YYYYMMDD_ledgers.csv`
 - `daily_execution_quality/YYYYMMDD_execution_quality.csv`
 
+Committed frozen seed artifacts:
+
+- `daily_signals/20260520_signals.csv`
+- `daily_entry_prices/20260520_entry_prices.csv`
+- `daily_signals/20260521_signals.csv`
+- `daily_entry_prices/20260521_entry_prices.csv`
+- `daily_signals/20260522_signals.csv`
+- `daily_entry_prices/20260522_entry_prices.csv`
+
+These files are paper-tracking frozen outputs used only to seed T-1 settlement
+when running from a fresh checkout. They should be reused as historical frozen
+signals, not regenerated silently from current data.
+
 Expected cumulative outputs:
 
 - `forward_shadow_daily_summary.csv`

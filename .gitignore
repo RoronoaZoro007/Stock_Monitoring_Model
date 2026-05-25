@@ -124,6 +124,15 @@
 !reports/tushare/v8_research/forward_shadow_setup/forward_shadow_live_runbook.md
 !reports/tushare/v8_forward_shadow/
 !reports/tushare/v8_forward_shadow/README.md
+!reports/tushare/v8_forward_shadow/frozen_seed_sha256.csv
+!reports/tushare/v8_forward_shadow/daily_signals/
+!reports/tushare/v8_forward_shadow/daily_signals/20260520_signals.csv
+!reports/tushare/v8_forward_shadow/daily_signals/20260521_signals.csv
+!reports/tushare/v8_forward_shadow/daily_signals/20260522_signals.csv
+!reports/tushare/v8_forward_shadow/daily_entry_prices/
+!reports/tushare/v8_forward_shadow/daily_entry_prices/20260520_entry_prices.csv
+!reports/tushare/v8_forward_shadow/daily_entry_prices/20260521_entry_prices.csv
+!reports/tushare/v8_forward_shadow/daily_entry_prices/20260522_entry_prices.csv
 
 __pycache__/
 *.pyc

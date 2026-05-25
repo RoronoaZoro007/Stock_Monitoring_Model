@@ -315,9 +315,10 @@ def seed_prior_artifacts_if_configured(args: argparse.Namespace, trade_date: str
         copy_prior_seed_files(seed_root, output_root, prior, paths)
         message = f"{message}; copied frozen T-1 artifacts from {seed_root} to {output_root}."
     elif policy == "reuse_only":
-        status = "failed"
-        return_code = 1
-        message = f"{message}; prior_input_policy=reuse_only forbids reconstruction."
+        message = (
+            f"{message}; prior_input_policy=reuse_only forbids reconstruction. "
+            "Prior settlement will be skipped, and today's paper tracking will continue."
+        )
     else:
         message = f"{message}; fallback to T-1 reconstruction."
     result = StepResult(
@@ -343,8 +344,6 @@ def seed_prior_artifacts_if_configured(args: argparse.Namespace, trade_date: str
         message=message,
         no_wait=bool(args.no_wait),
     )
-    if return_code != 0:
-        raise SystemExit(json.dumps(asdict(result), ensure_ascii=False, indent=2))
     return ok
 
 
@@ -469,7 +468,7 @@ def write_live_status(
     return path
 
 
-def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior: str, prior2: str, results: list[StepResult]) -> None:
+def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior: str, prior2: str, results: list[StepResult]) -> bool:
     output_root = Path(args.output_root)
     seed_prior_artifacts_if_configured(args, trade_date, prior, results)
     if entry_file_ready(output_root, prior):
@@ -489,7 +488,45 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior
                 args.topic_id,
                 bool(args.send_notifications),
             )
-        return
+        return True
+    if str(args.prior_input_policy) == "reuse_only":
+        message = (
+            f"{prior} frozen prior entry file is missing or invalid; prior settlement is skipped. "
+            "Today's tail signal flow will continue without reconstructing T-1."
+        )
+        result = StepResult(
+            step_id="prior_settlement_skipped",
+            scheduled_time="07:36:00",
+            status="skipped",
+            duration_seconds=0.0,
+            return_code=0,
+            stdout_tail=message,
+            stderr_tail="",
+            command=[],
+            message=message,
+        )
+        results.append(result)
+        write_results(results, output_root, trade_date)
+        write_live_status(
+            output_root,
+            trade_date,
+            "running",
+            current_step_id="prior_settlement_skipped",
+            scheduled_time="07:36:00",
+            completed_steps=len(results),
+            message=message,
+            no_wait=bool(args.no_wait),
+        )
+        if should_push(args.notification_policy, "milestone"):
+            send_wxpusher(
+                f"FS prior {prior} settlement skipped",
+                "# Forward Shadow prior settlement skipped\n\n"
+                + message
+                + "\n\npaper-only，不下单，不构成交易建议。",
+                args.topic_id,
+                bool(args.send_notifications),
+            )
+        return False
     steps = [
         (
             "prior_auction_guard",
@@ -588,6 +625,7 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior
             args.topic_id,
             bool(args.send_notifications),
         )
+    return entry_file_ready(output_root, prior)
 
 
 def minute_fetch_cmd(trade_date: str, signal_date: str | None, output_root: Path, minute_dir: Path, codes_source: str, bar_time: str, mode: str, args: argparse.Namespace) -> list[str]:
@@ -731,8 +769,8 @@ def main() -> None:
     parser.add_argument(
         "--prior-input-policy",
         choices=["reuse_or_rebuild", "reuse_only", "force_rebuild"],
-        default="reuse_or_rebuild",
-        help="How to handle frozen T-1 paper entry artifacts before settlement monitoring.",
+        default="reuse_only",
+        help="How to handle frozen T-1 paper entry artifacts before settlement monitoring. Default skips prior settlement instead of reconstructing missing frozen signals.",
     )
     parser.add_argument(
         "--prior-seed-root",
@@ -865,7 +903,7 @@ def main() -> None:
     if not prior or not prior2:
         raise SystemExit("prepare_baseline did not return prior trade dates")
 
-    reconstruct_prior_if_needed(args, trade_date, prior, prior2, results)
+    prior_entry_available = reconstruct_prior_if_needed(args, trade_date, prior, prior2, results)
 
     scheduled_steps: list[tuple[str, str, list[str], str]] = [
         (
@@ -896,26 +934,27 @@ def main() -> None:
             "",
         ),
     ]
-    for step_id, hms, bar, checkpoint in [
-        ("fetch_exit_0935_bar", "09:35:05", "09:35", ""),
-        ("exit_check_0935", "09:35:50", "", "check_0935"),
-        ("fetch_exit_0940_bar", "09:40:05", "09:40", ""),
-        ("exit_exec_0940", "09:40:50", "", "exec_0940"),
-        ("fetch_exit_0945_bar", "09:45:05", "09:45", ""),
-        ("exit_check_0945", "09:45:50", "", "check_0945"),
-        ("fetch_exit_0950_bar", "09:50:05", "09:50", ""),
-        ("exit_exec_0950", "09:50:50", "", "exec_0950"),
-        ("fetch_exit_1000_bar", "10:00:05", "10:00", ""),
-        ("exit_check_1000", "10:00:50", "", "check_1000"),
-        ("fetch_exit_1005_bar", "10:05:05", "10:05", ""),
-        ("exit_exec_1005", "10:05:50", "", "exec_1005"),
-        ("fetch_exit_1025_bar", "10:25:05", "10:25", ""),
-        ("exit_prealert_1025", "10:25:50", "", "prealert_1025"),
-        ("fetch_exit_1030_bar", "10:30:05", "10:30", ""),
-        ("exit_default_1030", "10:30:50", "", "default_1030"),
-    ]:
-        cmd = minute_fetch_cmd(trade_date, prior, output_root, Path(args.minute_dir), "prior_entries", bar, "bar", args) if bar else exit_monitor_cmd(prior, trade_date, checkpoint, args)
-        scheduled_steps.append((step_id, hms, cmd, ""))
+    if prior_entry_available:
+        for step_id, hms, bar, checkpoint in [
+            ("fetch_exit_0935_bar", "09:35:05", "09:35", ""),
+            ("exit_check_0935", "09:35:50", "", "check_0935"),
+            ("fetch_exit_0940_bar", "09:40:05", "09:40", ""),
+            ("exit_exec_0940", "09:40:50", "", "exec_0940"),
+            ("fetch_exit_0945_bar", "09:45:05", "09:45", ""),
+            ("exit_check_0945", "09:45:50", "", "check_0945"),
+            ("fetch_exit_0950_bar", "09:50:05", "09:50", ""),
+            ("exit_exec_0950", "09:50:50", "", "exec_0950"),
+            ("fetch_exit_1000_bar", "10:00:05", "10:00", ""),
+            ("exit_check_1000", "10:00:50", "", "check_1000"),
+            ("fetch_exit_1005_bar", "10:05:05", "10:05", ""),
+            ("exit_exec_1005", "10:05:50", "", "exec_1005"),
+            ("fetch_exit_1025_bar", "10:25:05", "10:25", ""),
+            ("exit_prealert_1025", "10:25:50", "", "prealert_1025"),
+            ("fetch_exit_1030_bar", "10:30:05", "10:30", ""),
+            ("exit_default_1030", "10:30:50", "", "default_1030"),
+        ]:
+            cmd = minute_fetch_cmd(trade_date, prior, output_root, Path(args.minute_dir), "prior_entries", bar, "bar", args) if bar else exit_monitor_cmd(prior, trade_date, checkpoint, args)
+            scheduled_steps.append((step_id, hms, cmd, ""))
 
     scheduled_steps.extend(
         [

@@ -17,7 +17,7 @@ Environment:
   SEND_NOTIFICATIONS=1|0         default 1
   WXPUSHER_TOPIC_ID=44635        default 44635
   NOTIFICATION_POLICY=key_events all_steps|key_events|trade_only|failures_only|none
-  PRIOR_INPUT_POLICY=reuse_or_rebuild reuse_or_rebuild|reuse_only|force_rebuild
+  PRIOR_INPUT_POLICY=reuse_only reuse_only|reuse_or_rebuild|force_rebuild
   PRIOR_SEED_ROOT=reports/tushare/v8_forward_shadow
   NO_WAIT=1                      execute schedule immediately, drill only
   REQUESTS_PER_MINUTE=120        default 120
@@ -55,7 +55,7 @@ PREFLIGHT_TIMEOUT="${PREFLIGHT_TIMEOUT:-8}"
 LOOKBACK_TRADING_DAYS="${LOOKBACK_TRADING_DAYS:-90}"
 TOPIC_ID="${WXPUSHER_TOPIC_ID:-44635}"
 NOTIFICATION_POLICY="${NOTIFICATION_POLICY:-key_events}"
-PRIOR_INPUT_POLICY="${PRIOR_INPUT_POLICY:-reuse_or_rebuild}"
+PRIOR_INPUT_POLICY="${PRIOR_INPUT_POLICY:-reuse_only}"
 PRIOR_SEED_ROOT="${PRIOR_SEED_ROOT:-reports/tushare/v8_forward_shadow}"
 
 ARGS=(
