@@ -132,6 +132,19 @@ def command_result_message(step: StepResult, extra: str = "") -> str:
     return "\n".join(body)
 
 
+def infer_subprocess_status(return_code: int, stdout: str) -> str:
+    if return_code != 0:
+        return "failed"
+    try:
+        payload = json.loads(stdout[stdout.find("{") :])
+    except Exception:
+        return "success"
+    embedded = str(payload.get("status") or payload.get("overall_status") or "").strip()
+    if embedded in {"warning", "partial", "skipped"}:
+        return embedded
+    return "success"
+
+
 def run_cmd(
     step_id: str,
     scheduled_time: str,
@@ -147,7 +160,7 @@ def run_cmd(
     result = StepResult(
         step_id=step_id,
         scheduled_time=scheduled_time,
-        status="success" if proc.returncode == 0 else "failed",
+        status=infer_subprocess_status(proc.returncode, proc.stdout),
         duration_seconds=round(time.monotonic() - started, 3),
         return_code=proc.returncode,
         stdout_tail=redact(proc.stdout[-5000:]),
@@ -162,7 +175,7 @@ def run_cmd(
             topic_id,
             push,
         )
-    if result.status != "success":
+    if result.return_code != 0:
         raise SystemExit(json.dumps(asdict(result), ensure_ascii=False, indent=2))
     return result
 
@@ -498,6 +511,11 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior
                 "3000",
                 "--requests-per-minute",
                 str(args.requests_per_minute),
+                "--timeout",
+                str(args.preflight_timeout),
+                "--max-retries",
+                "0",
+                "--allow-missing-open-auction",
             ),
         ),
         (
@@ -871,6 +889,11 @@ def main() -> None:
                 "3000",
                 "--requests-per-minute",
                 str(args.requests_per_minute),
+                "--timeout",
+                str(args.preflight_timeout),
+                "--max-retries",
+                "0",
+                "--allow-missing-open-auction",
             ),
             "",
         ),

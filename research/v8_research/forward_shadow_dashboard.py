@@ -28,6 +28,7 @@ DEFAULT_LOG_DIR = ROOT / "logs" / "forward_shadow_dashboard"
 BEIJING_TZ = timezone(timedelta(hours=8))
 MIN_TRADE_DATE = "20260521"
 DEFAULT_STEP_PLAN: list[tuple[str, str]] = [
+    ("preflight_downstream", "startup"),
     ("prepare_baseline", "07:30:00"),
     ("auction_guard_0925", "09:25:30"),
     ("fetch_exit_0935_bar", "09:35:05"),
@@ -601,9 +602,9 @@ def synthesize_step_progress(
     ]
     use_prior_plan = bool(optional_ids.intersection(completed_ids) or current_step in optional_ids or plan_hint in {"seed", "rebuild"})
     if plan_hint == "seed":
-        plan = [DEFAULT_STEP_PLAN[0], *prior_seed_plan, *DEFAULT_STEP_PLAN[1:]]
+        plan = [*DEFAULT_STEP_PLAN[:2], *prior_seed_plan, *DEFAULT_STEP_PLAN[2:]]
     elif plan_hint == "rebuild":
-        plan = [DEFAULT_STEP_PLAN[0], *prior_rebuild_plan, *DEFAULT_STEP_PLAN[1:]]
+        plan = [*DEFAULT_STEP_PLAN[:2], *prior_rebuild_plan, *DEFAULT_STEP_PLAN[2:]]
     elif use_prior_plan:
         if "prior_reconstruction_skipped" in completed_ids or current_step == "prior_reconstruction_skipped":
             active_prior_plan = [optional_by_id["prior_reconstruction_skipped"]]
@@ -613,7 +614,7 @@ def synthesize_step_progress(
             active_prior_plan = [*prior_seed_plan, *prior_rebuild_plan]
         else:
             active_prior_plan = prior_rebuild_plan
-        plan = [DEFAULT_STEP_PLAN[0], *active_prior_plan, *DEFAULT_STEP_PLAN[1:]]
+        plan = [*DEFAULT_STEP_PLAN[:2], *active_prior_plan, *DEFAULT_STEP_PLAN[2:]]
     else:
         plan = DEFAULT_STEP_PLAN
     plan_ids = {step_id for step_id, _ in plan}
@@ -864,6 +865,32 @@ def load_today_context(output_root: Path, trade_date: str) -> dict[str, Any]:
     }
 
 
+def load_dependency_status(output_root: Path, trade_date: str) -> dict[str, Any]:
+    preflight_path = output_root / "preflight" / f"{trade_date}_preflight.json"
+    preflight = read_json(preflight_path)
+    checks = preflight.get("checks") or []
+    rows: list[dict[str, Any]] = []
+    for item in checks:
+        rows.append(
+            {
+                "name": item.get("name", ""),
+                "status": item.get("status", ""),
+                "severity": item.get("severity", ""),
+                "role": item.get("role", ""),
+                "impact": item.get("impact") or item.get("error") or "",
+                "duration_seconds": item.get("duration_seconds", ""),
+            }
+        )
+    return {
+        "overall_status": preflight.get("overall_status") or ("missing" if not preflight else "unknown"),
+        "generated_time_beijing": preflight.get("generated_time_beijing", ""),
+        "prior_trade_date_for_probe": preflight.get("prior_trade_date_for_probe", ""),
+        "checks": rows,
+        "file": str(preflight_path),
+        "exists": preflight_path.exists(),
+    }
+
+
 def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Path | None = None, plan_hint: str = "auto") -> dict[str, Any]:
     live_dir = output_root / "live_runner"
     status_path = live_dir / f"{trade_date}_live_runner_status.json"
@@ -871,6 +898,7 @@ def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Pa
     candidate_path = output_root / "forward_shadow_candidate_status.csv"
     signals_path = output_root / "daily_signals" / f"{trade_date}_signals.csv"
     entry_path = output_root / "daily_entry_prices" / f"{trade_date}_entry_prices.csv"
+    preflight_path = output_root / "preflight" / f"{trade_date}_preflight.json"
 
     status_doc = read_json(status_path)
     steps = read_csv_rows(steps_path, max_rows=120)
@@ -890,6 +918,7 @@ def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Pa
         "candidate_status": str(candidate_path),
         "daily_signals": str(signals_path),
         "entry_prices": str(entry_path),
+        "preflight": str(preflight_path),
     }
     exists = {name: Path(path).exists() for name, path in files.items()}
     return {
@@ -902,6 +931,7 @@ def dashboard_artifacts(output_root: Path, trade_date: str, prior_entry_root: Pa
         "entry_counts": entry_counts,
         "prior_context": load_prior_context(output_root, trade_date, prior_entry_root=prior_entry_root),
         "today_context": load_today_context(output_root, trade_date),
+        "dependency_status": load_dependency_status(output_root, trade_date),
         "files": files,
         "file_exists": exists,
     }
@@ -1066,6 +1096,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .status-chip.success {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .status-chip.running {{ background: #eff8ff; color: #175cd3; border-color: #b2ddff; }}
     .status-chip.waiting {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
+    .status-chip.warning, .status-chip.partial {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
     .status-chip.pending {{ background: #f2f4f7; color: #475467; border-color: #d0d5dd; }}
     .status-chip.skipped {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
     .status-chip.failed {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
@@ -1249,7 +1280,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         <div class="metric"><span>当前节点</span><strong id="currentStep">-</strong></div>
         <div class="metric"><span>正在做什么</span><strong id="currentStepMeaning">-</strong></div>
         <div class="metric"><span>节点状态</span><strong id="runnerState">-</strong></div>
-        <div class="metric"><span>完成进度</span><strong id="completedSteps">0 / 29</strong></div>
+        <div class="metric"><span>完成进度</span><strong id="completedSteps">0 / 30</strong></div>
         <div class="metric"><span>当前耗时</span><strong id="currentElapsed">-</strong></div>
         <div class="metric"><span>总节点</span><strong id="totalSteps">-</strong></div>
         <div class="metric"><span>更新时间</span><strong id="updatedAt">-</strong></div>
@@ -1305,9 +1336,16 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         </div>
         <div class="two" style="margin-top:16px">
           <div>
+            <h2>依赖连通性</h2>
+            <div id="dependencyMeta" class="muted"></div>
+            <div id="dependencyTable"></div>
+          </div>
+          <div>
             <h2>四线路状态</h2>
             <div id="candidateTable"></div>
           </div>
+        </div>
+        <div class="two" style="margin-top:16px">
           <div>
             <h2>信号与入场统计</h2>
             <div id="signalSummary"></div>
@@ -1507,6 +1545,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }}
     function stepDescription(step) {{
       const map = {{
+        preflight_downstream: '启动预检：检查 Tushare、分钟线接口、WxPusher 与日历 fallback 连通性',
         prepare_baseline: '检查交易日历、股票池、T-1 日线与基础数据',
         seed_prior_artifacts: '检查 T-1 冻结信号/入场文件',
         prior_reconstruction_skipped: '前一交易日纸面买入记录已存在，跳过重建',
@@ -1596,6 +1635,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       const progress = artifacts.progress || {{}};
       const prior = artifacts.prior_context || {{}};
       const today = artifacts.today_context || {{}};
+      const deps = artifacts.dependency_status || {{}};
       const jobStatus = job ? job.status : 'idle';
       const selectedDate = data.display_trade_date || data.requested_trade_date || job?.meta?.trade_date || data.default_trade_date || '-';
       $('jobStatus').textContent = jobStatus;
@@ -1662,6 +1702,17 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
 
       $('candidateTable').innerHTML = table(artifacts.candidate_status || [], [
         {{key:'strategy_id', label:'line_id'}}, {{key:'tail_down_flag', label:'tail_down'}}, {{key:'selected_count', label:'selected', type:'number'}}, {{key:'no_trade_reason', label:'no_trade'}}
+      ]);
+      $('dependencyMeta').textContent = deps.exists
+        ? ('overall: ' + (deps.overall_status || '-') + '；updated: ' + (deps.generated_time_beijing || '-') + '；probe prior: ' + (deps.prior_trade_date_for_probe || '-'))
+        : '尚未生成启动预检文件。';
+      $('dependencyTable').innerHTML = table(deps.checks || [], [
+        {{key:'name', label:'依赖/检查项'}},
+        {{key:'status', label:'状态', type:'status'}},
+        {{key:'severity', label:'级别'}},
+        {{key:'role', label:'用途'}},
+        {{key:'duration_seconds', label:'耗时', type:'seconds'}},
+        {{key:'impact', label:'影响/错误', type:'message'}}
       ]);
       $('signalSummary').innerHTML = table(artifacts.signal_summary || [], [
         {{key:'strategy_id', label:'line_id'}}, {{key:'rows', label:'rows', type:'number'}}, {{key:'selected', label:'selected', type:'number'}}, {{key:'avg_score', label:'avg_score', type:'score'}}

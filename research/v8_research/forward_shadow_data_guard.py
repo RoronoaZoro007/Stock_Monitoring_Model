@@ -550,7 +550,13 @@ def run_auction_guard(args: argparse.Namespace) -> dict[str, Any]:
             fetch_results.append(fetch_auction_api(client, limiter, api, date, int(args.max_retries), auction_raw_dir))
     after = [auction_coverage(api, date, codes, auction_raw_dir) | {"role": role} for api, date, role in targets]
     missing_files = [x for x in after if not x["exists"] or x["rows"] <= 0]
-    status = "success" if not missing_files else "failed"
+    missing_required = [
+        x
+        for x in missing_files
+        if not (bool(args.allow_missing_open_auction) and x.get("role") == "open_auction")
+    ]
+    missing_optional = [x for x in missing_files if x not in missing_required]
+    status = "failed" if missing_required else ("warning" if missing_optional else "success")
     summary = {
         "task": "auction_guard_0925",
         "status": status,
@@ -562,17 +568,26 @@ def run_auction_guard(args: argparse.Namespace) -> dict[str, Any]:
         "before": before,
         "fetch_results": fetch_results,
         "after": after,
+        "missing_required": missing_required,
+        "missing_optional": missing_optional,
+        "degraded_feature_columns": [
+            "open_auction_ret",
+            "open_auction_amount_log",
+        ]
+        if missing_optional
+        else [],
         "duration_seconds": round(time.monotonic() - started, 3),
         "notes": [
             "stk_auction_o is T-day open auction and is allowed before 14:50 signal generation.",
             "stk_auction_c is used only for T-1 close auction in T-day features.",
             "T-day close auction remains archive-only and is not pulled by this guard.",
+            "If --allow-missing-open-auction is set, missing T-day open auction is a degraded warning; feature builder will keep open_auction_* as NaN for locked-model inference.",
         ],
     }
     path = report_dir / f"{args.trade_date}_auction_guard_0925.json"
     write_json(path, summary)
     summary["report_path"] = str(path)
-    if status != "success":
+    if status == "failed":
         raise SystemExit(json.dumps(summary, ensure_ascii=False, default=str))
     return summary
 
@@ -592,6 +607,11 @@ def parse_args() -> argparse.Namespace:
     auc.add_argument("--timeout", type=int, default=90)
     auc.add_argument("--max-retries", type=int, default=3)
     auc.add_argument("--refresh", action="store_true")
+    auc.add_argument(
+        "--allow-missing-open-auction",
+        action="store_true",
+        help="Do not fail the whole paper runner when T-day open auction is unavailable; open_auction_* features stay NaN.",
+    )
     auc.set_defaults(func=run_auction_guard)
 
     mins = sub.add_parser("minute-fetch")
