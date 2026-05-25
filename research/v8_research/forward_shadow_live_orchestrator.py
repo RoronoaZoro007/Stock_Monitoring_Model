@@ -387,6 +387,25 @@ def short_line(value: str) -> str:
     }.get(str(value), str(value))
 
 
+def board_label(code: Any) -> str:
+    text = str(code or "").upper()
+    raw = text.split(".", 1)[0]
+    suffix = text.split(".", 1)[1] if "." in text else ""
+    if suffix == "BJ" or raw.startswith(("43", "83", "87", "88", "92")):
+        return "北交所"
+    if raw.startswith(("688", "689")):
+        return "科创板"
+    if raw.startswith(("300", "301")):
+        return "创业板"
+    if raw.startswith(("900", "200")):
+        return "B股"
+    if suffix == "SH" or raw.startswith(("600", "601", "603", "605", "609")):
+        return "沪主板"
+    if suffix == "SZ" or raw.startswith(("000", "001", "002", "003")):
+        return "深主板"
+    return "未知"
+
+
 def buy_signal_detail(output_root: Path, trade_date: str) -> str:
     path = output_root / "daily_signals" / f"{trade_date}_signals.csv"
     if not path.exists():
@@ -400,8 +419,9 @@ def buy_signal_detail(output_root: Path, trade_date: str) -> str:
         return "无今日尾盘纸面买入候选。"
     display = df.copy()
     display["line"] = display["strategy_id"].map(short_line)
+    display["板块"] = display["code"].map(board_label)
     display["score"] = pd.to_numeric(display.get("score"), errors="coerce").map(lambda x: f"{x:.6f}" if pd.notna(x) else "")
-    cols = ["line", "original_v7_rank", "code", "name", "score", "entry_time", "position_weight"]
+    cols = ["line", "original_v7_rank", "code", "板块", "name", "score", "entry_time", "position_weight"]
     cols = [c for c in cols if c in display.columns]
     return "\n".join(
         [
@@ -423,8 +443,9 @@ def entry_detail(output_root: Path, trade_date: str) -> str:
         return ""
     display = df.copy()
     display["line"] = display["strategy_id"].map(short_line)
+    display["板块"] = display["code"].map(board_label)
     display["entry_vwap"] = display["entry_vwap"].map(price_text)
-    cols = ["line", "code", "name", "expected_entry_time", "entry_vwap", "weight", "paper_entry_status"]
+    cols = ["line", "code", "板块", "name", "expected_entry_time", "entry_vwap", "weight", "paper_entry_status"]
     cols = [c for c in cols if c in display.columns]
     return "\n".join(
         [

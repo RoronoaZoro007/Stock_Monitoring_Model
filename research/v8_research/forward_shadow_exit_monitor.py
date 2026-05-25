@@ -100,6 +100,25 @@ def short_strategy_id(value: str) -> str:
     return mapping.get(value, value)
 
 
+def board_label(code: Any) -> str:
+    text = str(code or "").upper()
+    raw = text.split(".", 1)[0]
+    suffix = text.split(".", 1)[1] if "." in text else ""
+    if suffix == "BJ" or raw.startswith(("43", "83", "87", "88", "92")):
+        return "北交所"
+    if raw.startswith(("688", "689")):
+        return "科创板"
+    if raw.startswith(("300", "301")):
+        return "创业板"
+    if raw.startswith(("900", "200")):
+        return "B股"
+    if suffix == "SH" or raw.startswith(("600", "601", "603", "605", "609")):
+        return "沪主板"
+    if suffix == "SZ" or raw.startswith(("000", "001", "002", "003")):
+        return "深主板"
+    return "未知"
+
+
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -711,6 +730,7 @@ def push_new_recommendations(
         return
     display = recs.copy()
     display["line"] = display["strategy_id"].map(short_strategy_id)
+    display["板块"] = display["code"].map(board_label)
     display["ret_now"] = display["return_at_check"].map(pct)
     display["entry"] = display["entry_vwap"].map(price)
     display["ref_sell"] = display["recommended_sell_price"].map(price)
@@ -723,7 +743,7 @@ def push_new_recommendations(
             "- 类型: `paper tracking only`",
             "- 说明: 推荐价为当前观察点可得参考价，实际 paper exit VWAP 在执行 bar 完成后记录。",
             "",
-            md_table(display, ["line", "code", "name", "exit_reason", "expected_exit_time", "entry", "ref_sell", "ret_now"], max_rows=30),
+            md_table(display, ["line", "code", "板块", "name", "exit_reason", "expected_exit_time", "entry", "ref_sell", "ret_now"], max_rows=30),
         ]
     )
     result = send_wxpusher(title, content, topic_id, dry_run)
@@ -744,6 +764,7 @@ def push_new_execution(
         return
     display = execution.copy()
     display["line"] = display["strategy_id"].map(short_strategy_id)
+    display["板块"] = display["code"].map(board_label)
     display["entry"] = display["entry_vwap"].map(price)
     display["exit"] = display["exit_vwap"].map(price)
     display["ret_5bp"] = display["return_5bp"].map(pct)
@@ -757,12 +778,210 @@ def push_new_execution(
             "- 类型: `paper tracking only`",
             "- 说明: 仅记录纸面账本，不代表实盘、模拟盘或交易建议。",
             "",
-            md_table(display, ["line", "code", "name", "actual_exit_time", "exit_reason", "entry", "exit", "ret_5bp", "ret_10bp_impact"], max_rows=30),
+            md_table(display, ["line", "code", "板块", "name", "actual_exit_time", "exit_reason", "entry", "exit", "ret_5bp", "ret_10bp_impact"], max_rows=30),
         ]
     )
     result = send_wxpusher(title, content, topic_id, dry_run)
     log = pd.DataFrame([{**result, "signal_date": signal_date, "settlement_date": settlement_date, "checkpoint": checkpoint, "sent_at_beijing": bj_now()}])
     write_replace(log, paths["push_logs"], ["signal_date", "settlement_date", "checkpoint", "summary"])
+
+
+def ledger_type_text(value: str) -> str:
+    mapping = {
+        "theoretical_5bp_ledger": "5bp理论",
+        "execution_10bp_impact_ledger": "10bp+impact",
+    }
+    return mapping.get(value, value)
+
+
+def push_log_sent(paths: dict[str, Path], checkpoint: str, summary: str, dry_run: bool) -> bool:
+    log = read_csv_if_exists(paths["push_logs"])
+    if log.empty:
+        return False
+    if "checkpoint" not in log.columns or "summary" not in log.columns:
+        return False
+    rows = log[
+        log["checkpoint"].astype(str).eq(checkpoint)
+        & log["summary"].astype(str).eq(summary)
+    ].copy()
+    if rows.empty:
+        return False
+    statuses = rows.get("status", pd.Series(dtype=str)).astype(str)
+    if dry_run:
+        return bool(statuses.isin(["success", "dry_run"]).any())
+    return bool(statuses.eq("success").any())
+
+
+def send_logged_wxpusher(
+    title: str,
+    content: str,
+    checkpoint: str,
+    signal_date: str,
+    settlement_date: str,
+    topic_id: int,
+    dry_run: bool,
+    paths: dict[str, Path],
+) -> None:
+    if push_log_sent(paths, checkpoint, title, dry_run):
+        return
+    result = send_wxpusher(title, content, topic_id, dry_run)
+    log = pd.DataFrame(
+        [
+            {
+                **result,
+                "signal_date": signal_date,
+                "settlement_date": settlement_date,
+                "checkpoint": checkpoint,
+                "sent_at_beijing": bj_now(),
+            }
+        ]
+    )
+    write_replace(log, paths["push_logs"], ["signal_date", "settlement_date", "checkpoint", "summary"])
+
+
+def strategy_daily_return(group: pd.DataFrame, return_col: str) -> float:
+    returns = pd.to_numeric(group.get(return_col), errors="coerce")
+    valid = group[returns.notna()].copy()
+    if valid.empty:
+        return np.nan
+    weights = pd.to_numeric(valid.get("weight"), errors="coerce").fillna(0.0)
+    if weights.sum() > 0:
+        weights = weights / weights.sum()
+    else:
+        weights = pd.Series(np.full(len(valid), 1.0 / len(valid)), index=valid.index)
+    return float((pd.to_numeric(valid[return_col], errors="coerce") * weights).sum())
+
+
+def push_final_settlement_summary(
+    execution: pd.DataFrame,
+    ledgers: pd.DataFrame,
+    quality: pd.DataFrame,
+    signal_date: str,
+    settlement_date: str,
+    topic_id: int,
+    dry_run: bool,
+    paths: dict[str, Path],
+) -> None:
+    total = int(len(execution))
+    quality_row = quality.iloc[0].to_dict() if not quality.empty else {}
+    recorded = int(num(quality_row.get("recorded"), 0))
+    delayed = int(num(quality_row.get("delayed"), 0))
+    zero_fill = int(num(quality_row.get("zero_fill"), 0))
+    avg_fill_ratio = num(quality_row.get("avg_fill_ratio"))
+    headline = (
+        f"- signal_date: `{signal_date}`\n"
+        f"- settlement_date: `{settlement_date}`\n"
+        "- 类型: `paper tracking only`\n"
+        "- 说明: 仅为纸面跟踪结算汇总，不代表实盘、模拟盘或交易建议。\n"
+        f"- 退出记录: `{total}`；已记录: `{recorded}`；延迟成交: `{delayed}`；零/缺失成交: `{zero_fill}`；"
+        f"平均成交比例: `{pct(avg_fill_ratio) if np.isfinite(avg_fill_ratio) else ''}`"
+    )
+
+    if execution.empty:
+        title = f"FS {settlement_date} 今日退出汇总: 无退出记录"
+        content = "\n".join([f"# {title}", "", headline])
+        send_logged_wxpusher(title, content, "settlement_summary_trades_01", signal_date, settlement_date, topic_id, dry_run, paths)
+    else:
+        display = execution.copy()
+        display["line"] = display["strategy_id"].map(short_strategy_id)
+        display["板块"] = display["code"].map(board_label)
+        display["entry"] = display["entry_vwap"].map(price)
+        display["exit"] = display["exit_vwap"].map(price)
+        display["ret_5bp"] = display["return_5bp"].map(pct)
+        display["ret_10bp_impact"] = display["return_10bp_impact"].map(pct)
+        display["fill"] = display["fill_ratio"].map(pct)
+        reason_counts = (
+            display.groupby(["actual_exit_time", "exit_reason"], dropna=False)
+            .size()
+            .reset_index(name="count")
+            .sort_values(["actual_exit_time", "exit_reason"])
+        )
+        chunk_size = 18
+        chunks = [display.iloc[i : i + chunk_size].copy() for i in range(0, len(display), chunk_size)]
+        for idx, chunk in enumerate(chunks, start=1):
+            suffix = f" {idx}/{len(chunks)}" if len(chunks) > 1 else ""
+            title = f"FS {settlement_date} 今日退出汇总{suffix}: {total}条"
+            content_parts = [
+                f"# {title}",
+                "",
+                headline,
+            ]
+            if idx == 1:
+                content_parts.extend(
+                    [
+                        "",
+                        "## 退出时间/原因分布",
+                        md_table(reason_counts, ["actual_exit_time", "exit_reason", "count"], max_rows=20),
+                    ]
+                )
+            content_parts.extend(
+                [
+                    "",
+                    "## 逐笔退出记录",
+                    md_table(
+                        chunk,
+                        ["line", "code", "板块", "name", "actual_exit_time", "exit_reason", "entry", "exit", "ret_5bp", "ret_10bp_impact", "fill"],
+                        max_rows=chunk_size,
+                    ),
+                ]
+            )
+            send_logged_wxpusher(
+                title,
+                "\n".join(content_parts),
+                f"settlement_summary_trades_{idx:02d}",
+                signal_date,
+                settlement_date,
+                topic_id,
+                dry_run,
+                paths,
+            )
+
+    if ledgers.empty:
+        ledger_display = pd.DataFrame()
+    else:
+        ledger_display = ledgers.copy()
+        ledger_display["line"] = ledger_display["strategy_id"].map(short_strategy_id)
+        ledger_display["ledger"] = ledger_display["ledger_type"].map(ledger_type_text)
+        ledger_display["daily_ret"] = ledger_display["daily_return"].map(pct)
+        ledger_display["avg_win_pct"] = ledger_display["avg_win"].map(pct)
+        ledger_display["avg_loss_pct"] = ledger_display["avg_loss"].map(pct)
+        ledger_display["PF"] = ledger_display["profit_factor"].map(lambda x: "" if not np.isfinite(num(x)) else f"{float(x):.2f}")
+        ledger_display = ledger_display.sort_values(["line", "ledger"])
+
+    per_line_rows: list[dict[str, Any]] = []
+    if not execution.empty:
+        for sid, group in execution.groupby("strategy_id"):
+            per_line_rows.append(
+                {
+                    "line": short_strategy_id(str(sid)),
+                    "positions": int(len(group)),
+                    "ret_5bp": pct(strategy_daily_return(group, "return_5bp")),
+                    "ret_10bp_impact": pct(strategy_daily_return(group, "return_10bp_impact")),
+                    "winners": int((pd.to_numeric(group.get("return_10bp_impact"), errors="coerce") > 0).sum()),
+                    "losers": int((pd.to_numeric(group.get("return_10bp_impact"), errors="coerce") <= 0).sum()),
+                }
+            )
+    per_line = pd.DataFrame(per_line_rows)
+
+    title = f"FS {settlement_date} 线路结算摘要"
+    content = "\n".join(
+        [
+            f"# {title}",
+            "",
+            headline,
+            "",
+            "## 线路收益概览",
+            md_table(per_line, ["line", "positions", "ret_5bp", "ret_10bp_impact", "winners", "losers"], max_rows=20),
+            "",
+            "## 双账本结算",
+            md_table(
+                ledger_display,
+                ["line", "ledger", "num_positions", "num_winners", "num_losers", "daily_ret", "avg_win_pct", "avg_loss_pct", "PF"],
+                max_rows=20,
+            ),
+        ]
+    )
+    send_logged_wxpusher(title, content, "settlement_summary_ledgers", signal_date, settlement_date, topic_id, dry_run, paths)
 
 
 def run_monitor(args: argparse.Namespace) -> dict[str, Any]:
@@ -831,6 +1050,7 @@ def run_monitor(args: argparse.Namespace) -> dict[str, Any]:
             run_monitor(sub)
 
     execution = read_csv_if_exists(paths["execution"])
+    ledgers = pd.DataFrame()
     if not execution.empty:
         write_replace(execution, paths["settlement"], ["signal_date", "settlement_date", "strategy_id", "code"])
         ledgers = build_strategy_ledgers(execution)
@@ -838,6 +1058,8 @@ def run_monitor(args: argparse.Namespace) -> dict[str, Any]:
             ensure_dir(paths["ledger"].parent)
             ledgers.to_csv(paths["ledger"], index=False)
     quality = write_quality(execution, paths["quality"], signal_date, settlement_date)
+    if args.send_notifications and args.checkpoint in {"default_1030", "settle_all"}:
+        push_final_settlement_summary(execution, ledgers, quality, signal_date, settlement_date, args.topic_id, args.dry_run_push, paths)
     sha = write_sha(paths)
 
     return {
