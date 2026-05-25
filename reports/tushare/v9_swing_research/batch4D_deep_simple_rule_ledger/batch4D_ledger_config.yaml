@@ -1,0 +1,44 @@
+batch: batch4D_deep_simple_rule_ledger
+training_enabled: false
+rule_search_enabled: false
+target_rules:
+  - low_stock_ret_60d
+  - combo_low_liquidity_weak_momentum
+top_n: 20
+horizon: 5d
+entry: T+1 adjusted open
+exit: T+5 adjusted close
+sleeve_fraction_per_signal_day: 0.2
+position_weighting: equal weight inside each daily sleeve
+capacity_reference: signal_amount_yuan unless scenario says none
+fill_policy: partial fill with cash drag; no refill
+entry_block_policy: block entry if entry_suspend or entry_limit_up_open for execution scenarios
+scenarios:
+  - scenario_id: no_cost_full_fill_1m
+    capital_yuan: 1000000
+    participation_cap: null
+    roundtrip_cost_bps: 0.0
+    capacity_reference: none
+    entry_limit_policy: allow_daily_proxy
+    description: Diagnostic no-cost full-fill ledger.
+  - scenario_id: base_1m_5pct_signal_40bps
+    capital_yuan: 1000000
+    participation_cap: 0.05
+    roundtrip_cost_bps: 40.0
+    capacity_reference: signal_amount_yuan
+    entry_limit_policy: block_entry_limit_or_suspend
+    description: Primary execution-stress ledger: 1m capital, 5% signal-day amount cap, 40bps roundtrip cost.
+  - scenario_id: high_cost_1m_5pct_signal_100bps
+    capital_yuan: 1000000
+    participation_cap: 0.05
+    roundtrip_cost_bps: 100.0
+    capacity_reference: signal_amount_yuan
+    entry_limit_policy: block_entry_limit_or_suspend
+    description: High-cost stress ledger: 1m capital, 5% signal-day amount cap, 100bps roundtrip cost.
+  - scenario_id: strict_5m_1pct_signal_40bps
+    capital_yuan: 5000000
+    participation_cap: 0.01
+    roundtrip_cost_bps: 40.0
+    capacity_reference: signal_amount_yuan
+    entry_limit_policy: block_entry_limit_or_suspend
+    description: Strict capacity stress: 5m capital, 1% signal-day amount cap, 40bps roundtrip cost.

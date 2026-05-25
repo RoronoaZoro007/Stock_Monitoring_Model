@@ -608,6 +608,21 @@ Handoff：
 - 简单规则虽然强于 Batch4B 轻量模型，但需要接受成本、容量、弱市和集中度审计后，才可能进入更深的纸面流程设计。
 - 当前仍不建议恢复复杂模型训练，也不建议直接 forward tracking。
 
+### Stage 7E Batch 4D Deep Simple Rule Ledger
+
+输出目录：`reports/tushare/v9_swing_research/batch4D_deep_simple_rule_ledger/`
+
+执行边界：
+
+- 只审计 `low_stock_ret_60d` 和 `combo_low_liquidity_weak_momentum`。
+- 不训练模型、不新增规则、不调参、不修改特征/标签/horizon/TopN。
+- 将 Batch3D/B4C 的日度 cohort 诊断升级为重叠持仓资金账本。
+- 账本采用每个信号日 20% 资金 sleeve，Top20 等权，5 日持有逐日 mark-to-market。
+
+结论：
+
+- 当前仍不能直接进入 forward tracking；需要先补 exit-delay、月度现金账本和弱市样本验证。
+
 ### Step 5A: 鲁棒性和暴露审计
 
 目标：判断模型是否只是数据挖掘、牛市 beta、题材抱团或流动性幻觉。
@@ -764,7 +779,7 @@ handoff 文件必须至少包含：
 下一步仍不应直接训练模型。
 推荐执行：
 
-> Batch 4C completed; review simple-rule robustness/capacity before any deeper audit
+> Batch 4D completed; review overlapping ledger before any forward tracking
 
 原因：
 
