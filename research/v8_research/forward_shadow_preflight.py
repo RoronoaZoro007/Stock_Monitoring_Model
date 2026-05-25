@@ -171,19 +171,19 @@ def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path,
         return check_result(
             "tushare_proxy_stk_mins_api",
             "skipped",
-            "warning",
+            "fatal",
             started,
             role="open_exit_and_tail_realtime_bars",
-            impact="cannot determine prior trade date for minute API probe",
+            impact="cannot verify required live minute provider because prior trade date is unavailable",
         )
     if not codes:
         return check_result(
             "tushare_proxy_stk_mins_api",
             "skipped",
-            "warning",
+            "fatal",
             started,
             role="open_exit_and_tail_realtime_bars",
-            impact="rank file unavailable for minute API probe",
+            impact="cannot verify required live minute provider because rank file is unavailable",
         )
     client = TushareProxyClient(token, get_proxy_url(), timeout=timeout)
     iso = ymd_to_iso(prior)
@@ -196,7 +196,7 @@ def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path,
     try:
         df = client.call("stk_mins", params)
         status = "success" if len(df) > 0 else "empty_response"
-        severity = "info" if len(df) > 0 else "warning"
+        severity = "info" if len(df) > 0 else "fatal"
         return check_result(
             "tushare_proxy_stk_mins_api",
             status,
@@ -207,19 +207,19 @@ def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path,
             probe_codes=len(codes),
             rows=int(len(df)),
             role="open_exit_and_tail_realtime_bars",
-            impact="required for T+1 09:35-10:30 exit monitoring and T-day 14:30-15:00 tail tracking",
+            impact="required for T+1 09:35-10:30 exit monitoring, T-day open auction dependency, and T-day 14:30-15:00 tail tracking",
         )
     except (TushareError, TushareRateLimit, SystemExit) as exc:
         return check_result(
             "tushare_proxy_stk_mins_api",
             "failed",
-            "warning",
+            "fatal",
             started,
             base_url=get_proxy_url(),
             probe_trade_date=prior,
             probe_codes=len(codes),
             role="open_exit_and_tail_realtime_bars",
-            impact="live exit alerts and tail signal generation may fail if the provider does not recover",
+            impact="required provider is unavailable; stop today's paper runner and restart only after the provider recovers",
             error=sanitize(repr(exc)),
         )
 
@@ -353,7 +353,8 @@ def main() -> None:
         "checks": checks,
         "notes": [
             "WxPusher domain failure cannot be reliably reported through WxPusher itself; check this local JSON and dashboard status.",
-            "stk_mins probe uses a prior-trading-day 09:35 bar to validate the same API used by T+1 exit monitoring and T-day tail tracking.",
+            "stk_mins probe uses a prior-trading-day 09:35 bar to validate the same provider domain used by T+1 exit monitoring, T-day open auction, and T-day tail tracking.",
+            "If the provider minute probe is fatal, the production runner should not continue because required real-time data is unavailable.",
             "This preflight does not modify v7 model, features, labels, TopN, or exit rules.",
         ],
     }

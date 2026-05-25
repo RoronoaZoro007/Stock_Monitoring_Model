@@ -515,7 +515,6 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior
                 str(args.preflight_timeout),
                 "--max-retries",
                 "0",
-                "--allow-missing-open-auction",
             ),
         ),
         (
@@ -893,7 +892,6 @@ def main() -> None:
                 str(args.preflight_timeout),
                 "--max-retries",
                 "0",
-                "--allow-missing-open-auction",
             ),
             "",
         ),
