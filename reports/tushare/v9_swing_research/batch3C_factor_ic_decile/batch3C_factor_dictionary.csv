@@ -1,0 +1,22 @@
+factor,factor_group,description,expected_direction,point_in_time_status,enabled_for_ic,enabled_for_training,notes
+stock_ret_1d,price_momentum_reversal,Stock 1-day adjusted return at signal date.,unknown,usable_after_t_close,True,False,Training enablement is blocked until Batch 4A feature freeze.
+stock_ret_5d,price_momentum_reversal,Stock 5-day adjusted return at signal date.,unknown,usable_after_t_close,True,False,Training enablement is blocked until Batch 4A feature freeze.
+stock_ret_20d,price_momentum,Stock 20-day adjusted return at signal date.,unknown,usable_after_t_close,True,False,Training enablement is blocked until Batch 4A feature freeze.
+stock_ret_60d,price_momentum,Stock 60-day adjusted return at signal date.,unknown,usable_after_t_close,True,False,Training enablement is blocked until Batch 4A feature freeze.
+stock_rel_industry_ret_1d,relative_strength,Stock 1-day return minus industry 1-day return.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+stock_rel_industry_ret_5d,relative_strength,Stock 5-day return minus industry 5-day return.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+stock_rel_industry_ret_20d,relative_strength,Stock 20-day return minus industry 20-day return.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+stock_rel_industry_ret_60d,relative_strength,Stock 60-day return minus industry 60-day return.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_ret_5d,industry_strength,Industry 5-day equal-weight return.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_ret_20d,industry_strength,Industry 20-day equal-weight return.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_ret_60d,industry_strength,Industry 60-day equal-weight return.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_breadth_20d,industry_breadth,Industry 20-day rolling positive-return breadth.,positive,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_breadth_60d,industry_breadth,Industry 60-day rolling positive-return breadth.,positive,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_amount_share,industry_crowding,Industry amount share of full-market amount.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_amount_share_roll20d,industry_crowding,Industry amount share 20-day rolling mean.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_amount_share_roll60d,industry_crowding,Industry amount share 60-day rolling mean.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+industry_crowding_score,industry_crowding,Industry amount-share percentile versus own prior 252 trading days.,unknown,diagnostic_industry_snapshot,True,False,Training enablement is blocked until Batch 4A feature freeze.
+stock_amount_share_in_industry,liquidity_crowding,Stock amount as share of its industry's amount.,unknown,usable_after_t_close,True,False,Training enablement is blocked until Batch 4A feature freeze.
+turnover_rate,liquidity,Daily turnover rate.,unknown,usable_after_t_close,True,False,Training enablement is blocked until Batch 4A feature freeze.
+log_amount,liquidity,Log daily amount.,unknown,usable_after_t_close,True,False,Training enablement is blocked until Batch 4A feature freeze.
+log_total_mv,size,Log total market value.,unknown,usable_after_t_close,True,False,Training enablement is blocked until Batch 4A feature freeze.

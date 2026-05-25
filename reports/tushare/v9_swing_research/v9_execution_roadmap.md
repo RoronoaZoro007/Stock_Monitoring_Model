@@ -11,6 +11,7 @@
 - 不用 2026-02-24 至 2026-05-20 的旧验证结果做最终参数选择。
 - 不把当前阶段结论包装成实盘建议。
 - 每个阶段完成后必须输出：当前分支、当前 commit、v7_locked 是否未移动、输出目录、核心结论、是否通过进入下一阶段。
+- 所有长任务默认必须优先支持可中断续跑：分块 checkpoint、默认 resume、只有显式 `--refresh` 才全量重算。
 
 ## 1. 阶段与 Batch 映射
 
@@ -21,7 +22,7 @@
 | Stage 2 clean panel + label audit | 合并日频面板，生成 3d/5d/10d forward label 并审计 | `batch2_clean_panel_label_audit` | 已完成 | clean panel、labels、缺失/极端收益/市场状态初稿 | 标签有效率、极端收益和执行风险已量化 |
 | Stage 3 市场状态标记 | 解决牛市训练、熊市失效风险 | `batch3A_market_regime` | 已完成 | 正式 regime 标签、阈值说明、分布、敏感性审计、handoff | 市场状态定义不使用未来收益调参 |
 | Stage 4 行业/概念特征工程 | 刻画行业强度、拥挤度、抱团风险 | `batch3B_industry_theme_features` | 已完成 | 行业强度、行业成交集中度、个股行业暴露、概念禁用说明、handoff | 行业字段为当前快照，仅诊断；概念数据源未锁定，不启用 |
-| Stage 5 因子 IC 与分层诊断 | 训练前判断因子是否有排序能力 | 建议 `batch3C_factor_ic_decile` | 未开始 | RankIC、ICIR、10 桶收益、Top-Bottom、分状态/行业/市值/流动性 IC | 只有稳定、可解释、非单一环境驱动的因子进入候选 |
+| Stage 5 因子 IC 与分层诊断 | 训练前判断因子是否有排序能力 | `batch3C_factor_ic_decile` | 已完成 | RankIC、ICIR、10 桶收益、Top-Bottom、分状态/行业/市值/流动性 IC | 已通过进入 Batch 3D；候选仅作简单规则基准输入，不可直接训练 |
 | Stage 6 简单规则基准 | 训练前必须打败简单规则 | 建议 `batch3D_simple_rule_baseline` 或独立 Batch4 | 未开始 | 趋势、反转、量价、行业动量、流动性等规则基准 | 新模型必须显著优于简单规则才进入训练 |
 | Stage 7 轻量模型研究 | 只在 Stage 5/6 通过后训练 | 后续 Batch4 | 禁止当前执行 | Logistic/Ridge/LightGBM rank model | 不能跳过前置 IC 和基准 |
 | Stage 8 稳健性与前向纸面 | 牛熊震荡、抱团、高拥挤、未见数据验证 | 后续 Batch5/6 | 禁止当前执行 | walk-forward、forward paper tracking | 历史结果不能直接转实盘 |
@@ -145,6 +146,51 @@ Handoff：
 Handoff：
 
 - `reports/tushare/v9_swing_research/batch3B_industry_theme_features/batch3B_handoff_to_batch3C.md`
+- `reports/tushare/v9_swing_research/v9_current_handoff.md`
+
+### Stage 5 因子 IC 与分层诊断
+
+输出目录：`reports/tushare/v9_swing_research/batch3C_factor_ic_decile/`
+
+执行说明：
+
+- 本批次只做 RankIC、ICIR、decile、Top-Bottom spread 和分层 IC 诊断。
+- 未训练模型、未跑简单规则回测、未启用概念/题材特征、未调参。
+- 已实现可中断续跑：长步骤按日期块或 `horizon + factor` 写入 `_checkpoints/`；默认不带 `--refresh` 时自动跳过已完成块。
+
+覆盖情况：
+
+| 周期 | 标签有效行 | 筛选后有效行 | 筛选后有效率 |
+|---|---:|---:|---:|
+| 3d | 9,258,989 | 8,615,311 | 92.5689% |
+| 5d | 9,241,951 | 8,600,989 | 92.4150% |
+| 10d | 9,204,385 | 8,568,101 | 92.0616% |
+
+核心结果：
+
+| 项目 | 数值 |
+|---|---:|
+| 面板总行数 | 9,306,920 |
+| screened universe 行数 | 8,639,432 |
+| 预注册因子数量 | 21 |
+| 通过候选筛选的 horizon-factor 行 | 39 |
+
+Top 诊断结果显示：
+
+- 10d `log_amount`：mean IC = -0.0809，ICIR = -8.6092，Top-Bottom direction-adjusted spread = 1.1033%。
+- 10d `turnover_rate`：mean IC = -0.0674，ICIR = -6.3757。
+- 5d `log_amount`：mean IC = -0.0632，ICIR = -6.9678。
+- 主要有效方向是低成交额、低换手、低个股行业成交占比，以及部分中期弱动量/弱相对强度的反向排序。
+
+重要限制：
+
+- IC 是排序诊断，不是交易收益；不能直接作为实盘或模型训练结论。
+- 行业字段仍为当前快照来源，行业相关因子只允许诊断，不能默认作为无偏训练字段。
+- 负 IC 因子可能代表反向选择价值，但必须由 Batch 3D 简单规则基准验证交易意义、成本、换手和稳定性。
+
+Handoff：
+
+- `reports/tushare/v9_swing_research/batch3C_factor_ic_decile/batch3C_handoff_to_batch3D.md`
 - `reports/tushare/v9_swing_research/v9_current_handoff.md`
 
 ## 3. Batch 3 不应该一次性做完的原因
@@ -565,7 +611,7 @@ handoff 文件必须至少包含：
 当前最新 handoff：
 
 - `reports/tushare/v9_swing_research/v9_current_handoff.md`
-- 内容来自 `Batch 3A -> Batch 3B`
+- 内容来自 `Batch 3C -> Batch 3D`
 
 ## 6. 每阶段完成后的固定回复模板
 
@@ -585,14 +631,14 @@ handoff 文件必须至少包含：
 
 ## 7. 当前推荐下一步
 
-当前已经完成 Stage 0、Stage 1、Stage 2、Stage 3、Stage 4。  
-下一步不应直接训练模型，也不应直接做简单规则回测。  
+当前已经完成 Stage 0、Stage 1、Stage 2、Stage 3、Stage 4、Stage 5。  
+下一步不应直接训练模型。  
 推荐执行：
 
-> Batch 3C: factor IC and decile diagnostics
+> Batch 3D: simple rule baseline
 
 原因：
 
-- Batch 3C 的分市场状态 IC 已有正式 market regime 输入。
-- Batch 3C 的分行业/拥挤度 IC 已有 Batch 3B 行业诊断输入。
-- 概念/题材特征仍未锁定 point-in-time 数据源，Batch 3C 必须保持禁用。
+- Batch 3C 已证明部分低流动性、低换手和反向动量因子存在排序诊断信号。
+- 这些诊断还不是收益证明，必须先转化为简单规则并和 random/simple baselines 对比。
+- 概念/题材特征仍未锁定 point-in-time 数据源，Batch 3D 仍必须保持禁用。
