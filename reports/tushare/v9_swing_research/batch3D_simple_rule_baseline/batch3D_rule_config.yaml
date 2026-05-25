@@ -1,0 +1,139 @@
+batch: batch3D_simple_rule_baseline
+top_n: 20
+random_simulations: 500
+random_seed: 20260525
+label: fwd_ret_{h}d_open
+label_definition: entry_adj_open(T+1) to exit_adj_close(T+h)
+costs: none_gross_diagnostic
+position_weighting: equal_weight_selected_names_per_signal_date
+overlap_accounting: cohort_return_diagnostic_not_full_capital_ledger
+concept_theme_features_enabled: false
+model_training_enabled: false
+resume_policy: default_resume_from_checkpoints; use --refresh to recompute from scratch
+rules:
+  - rule_id: low_log_amount
+    rule_group: liquidity_inverse
+    factors: [log_amount]
+    directions: [low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Select the lowest daily amount names."
+  - rule_id: low_turnover_rate
+    rule_group: liquidity_inverse
+    factors: [turnover_rate]
+    directions: [low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Select the lowest turnover names."
+  - rule_id: low_stock_amount_share_in_industry
+    rule_group: liquidity_crowding_inverse
+    factors: [stock_amount_share_in_industry]
+    directions: [low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Select stocks with low amount share inside their current industry."
+  - rule_id: low_log_total_mv
+    rule_group: size_inverse
+    factors: [log_total_mv]
+    directions: [low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Select smaller total market value names."
+  - rule_id: low_stock_ret_5d
+    rule_group: short_reversal
+    factors: [stock_ret_5d]
+    directions: [low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Classic short-term reversal proxy: weak 5d return."
+  - rule_id: low_stock_ret_20d
+    rule_group: medium_reversal
+    factors: [stock_ret_20d]
+    directions: [low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Inverse 20d momentum based on Batch 3C negative IC."
+  - rule_id: low_stock_ret_60d
+    rule_group: medium_reversal
+    factors: [stock_ret_60d]
+    directions: [low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Inverse 60d momentum based on Batch 3C negative IC."
+  - rule_id: high_stock_ret_20d
+    rule_group: momentum_control
+    factors: [stock_ret_20d]
+    directions: [high]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Naive 20d momentum control."
+  - rule_id: high_stock_ret_60d
+    rule_group: momentum_control
+    factors: [stock_ret_60d]
+    directions: [high]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Naive 60d momentum control."
+  - rule_id: low_stock_rel_industry_ret_20d
+    rule_group: relative_strength_inverse
+    factors: [stock_rel_industry_ret_20d]
+    directions: [low]
+    uses_industry_snapshot: true
+    primary_rule: true
+    description: "Select names weak versus their current industry over 20d."
+  - rule_id: low_stock_rel_industry_ret_60d
+    rule_group: relative_strength_inverse
+    factors: [stock_rel_industry_ret_60d]
+    directions: [low]
+    uses_industry_snapshot: true
+    primary_rule: true
+    description: "Select names weak versus their current industry over 60d."
+  - rule_id: low_industry_crowding_score
+    rule_group: industry_crowding_inverse
+    factors: [industry_crowding_score]
+    directions: [low]
+    uses_industry_snapshot: true
+    primary_rule: true
+    description: "Select names in low-crowding current-snapshot industries."
+  - rule_id: high_industry_ret_20d
+    rule_group: industry_momentum_control
+    factors: [industry_ret_20d]
+    directions: [high]
+    uses_industry_snapshot: true
+    primary_rule: true
+    description: "Naive current-snapshot industry momentum control."
+  - rule_id: low_industry_ret_60d
+    rule_group: industry_reversal
+    factors: [industry_ret_60d]
+    directions: [low]
+    uses_industry_snapshot: true
+    primary_rule: true
+    description: "Current-snapshot industry reversal diagnostic."
+  - rule_id: combo_low_liquidity
+    rule_group: combo
+    factors: [log_amount, turnover_rate, stock_amount_share_in_industry]
+    directions: [low, low, low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Average preferred-rank of low amount, low turnover and low stock industry amount share."
+  - rule_id: combo_weak_momentum
+    rule_group: combo
+    factors: [stock_ret_20d, stock_ret_60d, stock_rel_industry_ret_20d, stock_rel_industry_ret_60d]
+    directions: [low, low, low, low]
+    uses_industry_snapshot: true
+    primary_rule: true
+    description: "Average preferred-rank of weak medium-term absolute and relative momentum."
+  - rule_id: combo_low_liquidity_weak_momentum
+    rule_group: combo
+    factors: [log_amount, turnover_rate, stock_ret_20d, stock_ret_60d]
+    directions: [low, low, low, low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Average preferred-rank of low liquidity and weak medium-term momentum."
+  - rule_id: combo_low_size_low_liquidity
+    rule_group: combo
+    factors: [log_total_mv, log_amount, turnover_rate]
+    directions: [low, low, low]
+    uses_industry_snapshot: false
+    primary_rule: true
+    description: "Average preferred-rank of smaller size and lower trading activity."
