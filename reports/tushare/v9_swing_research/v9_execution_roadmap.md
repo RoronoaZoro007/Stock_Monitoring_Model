@@ -577,6 +577,22 @@ Handoff：
 - 若 Batch4B gate 为 review，则不得进入 Batch5A；需要先人工审查模型未打败简单规则的问题。
 - 不得直接进入 walk-forward、forward paper tracking 或实盘相关流程。
 
+### Stage 7C Batch 4B Review
+
+输出目录：`reports/tushare/v9_swing_research/batch4B_review/`
+
+执行边界：
+
+- 未重训模型、未调参、未修改特征/标签/horizon/TopN。
+- 重建 Batch3D 5d minimum-to-beat 简单规则 Top20 明细，与 Batch4B 模型 Top20 逐日对齐。
+- 输出重合率、替换贡献、低市值/低流动性暴露、容量代理和特征权重读数。
+
+结论：
+
+- 当前轻量模型没有稳定打败简单规则。
+- 当前不建议进入 Batch5A，也不建议训练更复杂模型。
+- 下一步优先做简单规则的成本、容量、弱市和集中度鲁棒性审计，或另开 Batch4A amendment 冻结不同训练目标。
+
 ### Step 5A: 鲁棒性和暴露审计
 
 目标：判断模型是否只是数据挖掘、牛市 beta、题材抱团或流动性幻觉。
@@ -733,7 +749,7 @@ handoff 文件必须至少包含：
 下一步仍不应直接训练模型。
 推荐执行：
 
-> Review Batch 4B model-vs-baseline gap; do not enter Batch 5A yet
+> Batch 4B Review completed; do not enter Batch 5A with current lightweight models
 
 原因：
 

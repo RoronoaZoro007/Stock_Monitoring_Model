@@ -1,0 +1,19 @@
+# Batch 4B Review Data Foundation Check
+
+This file answers whether the original downloaded data had correctness checks and cleaning before Batch4B.
+
+## Evidence
+
+| check_area               | evidence_file                                                                                                                                          | key_result                                                                                       | interpretation                                                                                               |
+|:-------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------|
+| raw_download_coverage    | /Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/stage0_data_foundation/stage0_coverage_report.csv             | coverage_pass=True                                                                               | Raw daily endpoint coverage was locked before factor/model work.                                             |
+| raw_endpoint_rows        | /Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/stage0_data_foundation/stage0_raw_endpoint_summary.csv        | endpoints=5, rows=39670458, missing_dates=0                                                      | daily/adj_factor/daily_basic/suspend_d/stk_limit raw files have endpoint-level hashes and date coverage.     |
+| clean_panel_coverage     | /Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch2_clean_panel_label_audit/batch2_panel_coverage.csv      | rows=9306920, trade_days=2032, codes=5755, duplicate_code_dates=0                                | Clean panel exists and has no duplicate stock-date rows in the Batch2 audit.                                 |
+| clean_panel_missingness  | /Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch2_clean_panel_label_audit/batch2_panel_quality_audit.csv | open_missing=0.0, close_missing=0.0, adj_factor_missing=0.0, total_mv_missing=0.0069555771404503 | Core price and adjustment fields passed; total_mv/turnover/basic fields retain a small missing-ratio caveat. |
+| primary_5d_label_quality | /Users/yuxiang.luo/Documents/Codex/2026-05-21/new-chat/reports/tushare/v9_swing_research/batch2_clean_panel_label_audit/batch2_label_distribution.csv  | valid_ratio=0.993019, abs_gt_20pct_ratio=0.019203, raw_adj_mean_gap=0.000640                     | The Batch4B primary 5d label is already audited for missingness, extreme labels and adjustment effects.      |
+
+## Conclusion
+
+- Yes. v9 has a Stage0 raw data lock with coverage and hashes, followed by Batch2 clean-panel and label audits.
+- The current Batch4B model underperformance is therefore not primarily attributed to missing raw-data QA or missing cleaning.
+- The remaining caveats are still material: no independent vendor cross-check, point-in-time industry limitation, ST proxy limitations, and gross-return rather than executable-ledger accounting.
