@@ -84,6 +84,60 @@ def call_with_retry(
             time.sleep(min(45, 5 * attempt))
 
 
+def exc_summary(exc: BaseException, limit: int = 500) -> str:
+    return f"{type(exc).__name__}: {exc}"[:limit]
+
+
+def fetch_trade_cal_from_akshare(start_date: str, end_date: str) -> pd.DataFrame:
+    try:
+        import akshare as ak
+    except ImportError as exc:
+        raise TushareError("akshare is not installed; cannot use trade_cal fallback") from exc
+
+    raw = ak.tool_trade_date_hist_sina()
+    if raw.empty or "trade_date" not in raw.columns:
+        raise TushareError("akshare trade date fallback returned no trade_date column")
+
+    open_dates = (
+        pd.to_datetime(raw["trade_date"], errors="coerce")
+        .dropna()
+        .dt.strftime("%Y%m%d")
+        .tolist()
+    )
+    open_set = set(open_dates)
+    sorted_open = sorted(open_set)
+    if not sorted_open:
+        raise TushareError("akshare trade date fallback returned no open dates")
+
+    days = pd.date_range(ymd_to_dt(start_date), ymd_to_dt(end_date), freq="D").strftime("%Y%m%d").tolist()
+    rows: list[dict[str, Any]] = []
+    open_idx = 0
+    last_open = ""
+    for day in days:
+        while open_idx < len(sorted_open) and sorted_open[open_idx] < day:
+            last_open = sorted_open[open_idx]
+            open_idx += 1
+        is_open = 1 if day in open_set else 0
+        rows.append({"exchange": "SSE", "cal_date": day, "is_open": is_open, "pretrade_date": last_open})
+        if is_open:
+            last_open = day
+            while open_idx < len(sorted_open) and sorted_open[open_idx] <= day:
+                open_idx += 1
+    return pd.DataFrame(rows)
+
+
+def merge_trade_cal_frames(cached: pd.DataFrame, fetched: pd.DataFrame) -> pd.DataFrame:
+    frames = [df for df in [cached, fetched] if not df.empty]
+    merged = pd.concat(frames, ignore_index=True, sort=False) if frames else pd.DataFrame()
+    if not merged.empty:
+        merged["cal_date"] = merged["cal_date"].astype(str)
+        if "exchange" not in merged.columns:
+            merged["exchange"] = "SSE"
+        keys = ["exchange", "cal_date"]
+        merged = merged.drop_duplicates(keys, keep="last").sort_values("cal_date", ascending=False)
+    return merged
+
+
 def fetch_to_parquet(
     client: TushareProxyClient,
     limiter: RateLimiter,
@@ -128,29 +182,36 @@ def load_or_fetch_trade_cal(
             cached["cal_date"] = cached["cal_date"].astype(str)
             cache_covers_request = bool(cached["cal_date"].min() <= start_date and cached["cal_date"].max() >= end_date)
     if refresh or not DEFAULT_TRADE_CAL.exists() or not cache_covers_request:
-        fetched = call_with_retry(
-            client,
-            limiter,
-            "trade_cal",
-            {"exchange": "SSE", "start_date": start_date, "end_date": end_date},
-            "exchange,cal_date,is_open,pretrade_date",
-            max_retries,
-        )
-        frames = [df for df in [cached, fetched] if not df.empty]
-        merged = pd.concat(frames, ignore_index=True, sort=False) if frames else fetched
-        if not merged.empty:
-            merged["cal_date"] = merged["cal_date"].astype(str)
-            keys = ["exchange", "cal_date"] if "exchange" in merged.columns else ["cal_date"]
-            merged = merged.drop_duplicates(keys, keep="last").sort_values("cal_date", ascending=False)
+        provider_error = ""
+        fallback_used = False
+        try:
+            trade_cal_client = TushareProxyClient(client.token, client.base_url, timeout=min(int(client.timeout), 20))
+            fetched = call_with_retry(
+                trade_cal_client,
+                limiter,
+                "trade_cal",
+                {"exchange": "SSE", "start_date": start_date, "end_date": end_date},
+                "exchange,cal_date,is_open,pretrade_date",
+                0,
+            )
+            status = "fetched_merged" if cache_covers_request else "fetched_missing_range"
+        except (TushareError, TushareRateLimit) as exc:
+            provider_error = exc_summary(exc)
+            fetched = fetch_trade_cal_from_akshare(start_date, end_date)
+            fallback_used = True
+            status = "fallback_akshare_merged" if not cached.empty else "fallback_akshare_missing_range"
+        merged = merge_trade_cal_frames(cached, fetched)
         checksum = write_parquet_atomic(merged, str(DEFAULT_TRADE_CAL))
         result = {
             "api_name": "trade_cal",
             "path": str(DEFAULT_TRADE_CAL),
-            "status": "fetched_merged" if cache_covers_request else "fetched_missing_range",
+            "status": status,
             "rows": int(len(merged)),
             "requested_start_date": start_date,
             "requested_end_date": end_date,
             "cache_covers_request_before_fetch": cache_covers_request,
+            "fallback_used": fallback_used,
+            "provider_error": provider_error,
             "sha1": checksum,
         }
     else:
