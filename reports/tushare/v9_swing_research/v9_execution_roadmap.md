@@ -546,6 +546,37 @@ Handoff：
 
 > Batch 4B 已完成。若模型未稳定打败简单规则，不进入鲁棒性审计；若通过，冻结候选模型进入 Batch 5A 鲁棒性与暴露审计。
 
+### Stage 7B 轻量模型训练
+
+输出目录：`reports/tushare/v9_swing_research/batch4B_lightweight_model_training/`
+
+执行边界：
+
+- 严格使用 Batch4A 冻结的 `5d` 标签和冻结特征。
+- 未做超参搜索，未切换 horizon，未启用概念/题材字段。
+- 输出模型注册、权重、Top20 逐日收益、分市场状态/年度/行业诊断和简单规则对比。
+
+下一步：
+
+- 若 Batch4B gate 通过，只能进入 Batch5A 鲁棒性和暴露审计。
+- 不得直接进入 walk-forward、forward paper tracking 或实盘相关流程。
+
+### Stage 7B 轻量模型训练
+
+输出目录：`reports/tushare/v9_swing_research/batch4B_lightweight_model_training/`
+
+执行边界：
+
+- 严格使用 Batch4A 冻结的 `5d` 标签和冻结特征。
+- 未做超参搜索，未切换 horizon，未启用概念/题材字段。
+- 输出模型注册、权重、Top20 逐日收益、分市场状态/年度/行业诊断和简单规则对比。
+
+下一步：
+
+- 若 Batch4B gate 通过，只能进入 Batch5A 鲁棒性和暴露审计。
+- 若 Batch4B gate 为 review，则不得进入 Batch5A；需要先人工审查模型未打败简单规则的问题。
+- 不得直接进入 walk-forward、forward paper tracking 或实盘相关流程。
+
 ### Step 5A: 鲁棒性和暴露审计
 
 目标：判断模型是否只是数据挖掘、牛市 beta、题材抱团或流动性幻觉。
@@ -678,7 +709,7 @@ handoff 文件必须至少包含：
 当前最新 handoff：
 
 - `reports/tushare/v9_swing_research/v9_current_handoff.md`
-- 内容来自 `Batch 4A -> Batch 4B`
+- 内容来自 `Batch 4B -> Batch 5A`
 
 ## 6. 每阶段完成后的固定回复模板
 
@@ -702,7 +733,7 @@ handoff 文件必须至少包含：
 下一步仍不应直接训练模型。
 推荐执行：
 
-> Batch 4B: lightweight model training, only if the Batch 4A frozen plan is accepted
+> Review Batch 4B model-vs-baseline gap; do not enter Batch 5A yet
 
 原因：
 

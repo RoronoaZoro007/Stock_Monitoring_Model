@@ -1,0 +1,43 @@
+# Batch 4B train config
+
+primary_horizon: 5d
+primary_label: fwd_ret_5d_open
+binary_label: label_win_5d
+top_n: 20
+random_seed: 42
+feature_transform: daily_cross_sectional_rank_pct_then_center
+missing_value_policy: centered_rank_zero
+splits:
+  train: [20180102, 20221230]
+  validation: [20230103, 20241231]
+  research_holdout: [20250102, 20260522]
+primary_features:
+  - stock_ret_5d
+  - stock_ret_20d
+  - stock_ret_60d
+  - turnover_rate
+  - log_amount
+  - log_total_mv
+conditional_ablation_features:
+  - stock_amount_share_in_industry
+models:
+  - model_id: ridge_primary_alpha1
+    family: ridge
+    objective: regression_fwd_ret_5d_open
+    role: primary_candidate
+    features: [stock_ret_5d, stock_ret_20d, stock_ret_60d, turnover_rate, log_amount, log_total_mv]
+  - model_id: logistic_primary_sgd_l2
+    family: logistic_sgd
+    objective: classification_label_win_5d
+    role: secondary_diagnostic
+    features: [stock_ret_5d, stock_ret_20d, stock_ret_60d, turnover_rate, log_amount, log_total_mv]
+  - model_id: ridge_conditional_industry_ablation
+    family: ridge
+    objective: regression_fwd_ret_5d_open
+    role: conditional_ablation_only
+    features: [stock_ret_5d, stock_ret_20d, stock_ret_60d, turnover_rate, log_amount, log_total_mv, stock_amount_share_in_industry]
+blocked:
+  - no hyperparameter search
+  - no horizon switching
+  - no non-frozen features
+  - no concept/theme fields
