@@ -299,6 +299,53 @@ def copy_prior_seed_files(seed_root: Path, output_root: Path, prior: str, paths:
         shutil.copy2(src, dst)
 
 
+def reset_settlement_outputs(output_root: Path, signal_date: str, settlement_date: str) -> StepResult:
+    started = time.monotonic()
+    targets = [
+        output_root / "daily_exit_recommendations" / f"{signal_date}_{settlement_date}_exit_recommendations.csv",
+        output_root / "daily_exit_execution" / f"{signal_date}_{settlement_date}_exit_execution.csv",
+        output_root / "daily_exit_settlement" / f"{signal_date}_{settlement_date}_exit_settlement.csv",
+        output_root / "daily_ledgers" / f"{signal_date}_{settlement_date}_exit_ledgers.csv",
+        output_root / "daily_execution_quality" / f"{signal_date}_{settlement_date}_exit_quality.csv",
+        output_root / "push_logs" / f"{signal_date}_{settlement_date}_exit_push_logs.csv",
+        output_root / "sha256" / f"{signal_date}_{settlement_date}_exit_monitor_sha256.csv",
+    ]
+    deleted: list[str] = []
+    missing = 0
+    errors: list[str] = []
+    for path in targets:
+        if not path.exists():
+            missing += 1
+            continue
+        try:
+            path.unlink()
+            deleted.append(str(path))
+        except OSError as exc:
+            errors.append(f"{path}: {exc}")
+    status = "success" if not errors else "failed"
+    payload = {
+        "task": "reset_settlement_outputs",
+        "signal_date": signal_date,
+        "settlement_date": settlement_date,
+        "deleted_count": len(deleted),
+        "missing_count": missing,
+        "deleted_files": deleted,
+        "errors": errors,
+        "note": "Only derived T-1/T exit files are cleared before replay; frozen prior signals and entry files are preserved.",
+    }
+    return StepResult(
+        step_id="reset_settlement_outputs",
+        scheduled_time="startup",
+        status=status,
+        duration_seconds=round(time.monotonic() - started, 3),
+        return_code=0 if status == "success" else 1,
+        stdout_tail=json.dumps(payload, ensure_ascii=False),
+        stderr_tail="\n".join(errors),
+        command=[],
+        message=f"Deleted {len(deleted)} stale settlement output files for {signal_date}->{settlement_date}; preserved frozen prior entry artifacts.",
+    )
+
+
 def seed_prior_artifacts_if_configured(args: argparse.Namespace, trade_date: str, prior: str, results: list[StepResult]) -> bool:
     policy = str(args.prior_input_policy)
     output_root = Path(args.output_root)
@@ -788,6 +835,11 @@ def main() -> None:
     parser.add_argument("--skip-moneyflow", action="store_true")
     parser.add_argument("--force-refresh-minutes", action="store_true", help="Re-request minute bars even when local bars already exist; output remains deduped.")
     parser.add_argument(
+        "--reset-settlement-outputs",
+        action="store_true",
+        help="Before exit monitoring, delete derived T-1/T exit recommendation, execution, settlement, ledger, quality, push-log, and sha files for this run pair. Use for historical replay, not for intraday resume.",
+    )
+    parser.add_argument(
         "--prior-input-policy",
         choices=["reuse_or_rebuild", "reuse_only", "force_rebuild"],
         default="reuse_only",
@@ -925,6 +977,22 @@ def main() -> None:
         raise SystemExit("prepare_baseline did not return prior trade dates")
 
     prior_entry_available = reconstruct_prior_if_needed(args, trade_date, prior, prior2, results)
+    if bool(args.reset_settlement_outputs) and prior_entry_available:
+        reset_result = reset_settlement_outputs(output_root, prior, trade_date)
+        results.append(reset_result)
+        write_results(results, output_root, trade_date)
+        write_live_status(
+            output_root,
+            trade_date,
+            "running" if reset_result.status == "success" else "failed",
+            current_step_id="reset_settlement_outputs",
+            scheduled_time="startup",
+            completed_steps=len(results),
+            message=reset_result.message,
+            no_wait=bool(args.no_wait),
+        )
+        if reset_result.status != "success":
+            raise SystemExit(reset_result.stderr_tail or "reset_settlement_outputs failed")
 
     scheduled_steps: list[tuple[str, str, list[str], str]] = [
         (

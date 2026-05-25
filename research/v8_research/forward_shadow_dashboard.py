@@ -240,6 +240,10 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
     prior_input_policy = str(payload.get("prior_input_policy") or "reuse_only")
     if prior_input_policy not in {"reuse_or_rebuild", "reuse_only", "force_rebuild"}:
         raise ValueError("prior_input_policy must be reuse_or_rebuild, reuse_only, or force_rebuild")
+    if "reset_settlement_outputs" in payload:
+        reset_settlement_outputs = bool(payload.get("reset_settlement_outputs"))
+    else:
+        reset_settlement_outputs = mode == "fast_replay"
     job_id = safe_label(str(payload.get("_job_id") or uuid.uuid4().hex[:12]))
     requested_run_id = safe_label(str(payload.get("run_id") or ""))
     run_id = requested_run_id or safe_label(f"{trade_date}_{bj_now().strftime('%H%M%S')}_{job_id}")
@@ -291,6 +295,8 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         cmd.append("--skip-moneyflow")
     if force_refresh_minutes:
         cmd.append("--force-refresh-minutes")
+    if reset_settlement_outputs:
+        cmd.append("--reset-settlement-outputs")
 
     warnings = []
     if mode == "live_time" and trade_date != today_ymd():
@@ -306,6 +312,7 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         "use_run_id_output_dir": use_run_id_output_dir,
         "preserve_run_snapshot": preserve_snapshot,
         "force_refresh_minutes": force_refresh_minutes,
+        "reset_settlement_outputs": reset_settlement_outputs,
         "requests_per_minute": requests_per_minute,
         "batch_size": batch_size,
         "lookback_trading_days": lookback_days,
@@ -1558,7 +1565,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
             <label><input id="forceRefreshMinutes" type="checkbox"> 强制重新下载分钟线</label>
           </div>
         </div>
-        <p class="muted">模拟时间点快跑仍走真实接口和真实数据处理，只是不等待墙上时间。run_id 输出目录写入 `输出目录/runs/run_id`；T-1 默认从输出目录基线复用已冻结的 `daily_signals` 和 `daily_entry_prices`，缺失或校验失败才自动重建；强制重新下载分钟线会重新请求分钟 bar 并按时间键覆盖去重。</p>
+        <p class="muted">模拟时间点快跑仍走真实接口和真实数据处理，只是不等待墙上时间。快跑启动时会先清理本次 T-1/T 对应的卖出提示、退出记录、结算摘要等派生产物，避免和旧补跑结果混合；run_id 输出目录写入 `输出目录/runs/run_id`；T-1 默认从输出目录基线复用已冻结的 `daily_signals` 和 `daily_entry_prices`；强制重新下载分钟线会重新请求分钟 bar 并按时间键覆盖去重。</p>
       </details>
       <div id="message" class="muted"></div>
     </section>
