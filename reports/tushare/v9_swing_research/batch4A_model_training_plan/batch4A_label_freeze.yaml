@@ -1,0 +1,23 @@
+# Batch 4A label freeze
+
+primary_horizon: 5d
+diagnostic_horizons:
+  - 3d
+  - 10d
+primary_return_column: fwd_ret_5d_open
+primary_binary_column: label_win_5d
+entry_price_definition: T+1 adjusted open
+exit_price_definition: T+5 adjusted close
+raw_formula: fwd_ret_5d_open = exit_adj_close_5d / entry_adj_open - 1
+training_objective_priority:
+  - cross_sectional_rank_or_regression_on_fwd_ret_5d_open
+  - binary_label_win_5d_as_secondary_diagnostic
+forbidden_label_changes:
+  - no threshold optimization after seeing validation/test results
+  - no switching primary horizon after Batch 4B starts
+  - no using 10d as primary unless Batch 4A is explicitly revised and re-approved
+  - no post-hoc removal of losing dates, losing industries, or low-capacity samples
+label_notes:
+  - 5d is selected before model training based on Batch2/3C/3D evidence.
+  - Labels are gross research labels; trading costs and capacity are applied in evaluation, not in label construction.
+  - Diagnostic horizons cannot be used for model selection in the same Batch 4B run.

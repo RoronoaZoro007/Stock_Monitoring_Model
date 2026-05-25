@@ -1,0 +1,27 @@
+# Batch 4A split config
+
+split_method: chronological_time_series
+shuffle_samples: false
+fit_transform_scope: train_only
+primary_train:
+  start_date: 20180102
+  end_date: 20221230
+validation:
+  start_date: 20230103
+  end_date: 20241231
+research_holdout:
+  start_date: 20250102
+  end_date: 20260522
+holdout_warning: >
+  The research_holdout is not a pristine final test set because Batch3C/3D
+  diagnostics already looked across the full historical sample. It can be used
+  for locked-plan audit, but final credibility still requires later walk-forward
+  and forward paper tracking.
+screened_universe:
+  listed_days_min: 120
+  exclude_st: true
+  exclude_suspended: true
+  exclude_limit_up_close: true
+  exclude_limit_down_close: true
+primary_horizon: 5d
+split_summary_file: batch4A_split_summary.csv

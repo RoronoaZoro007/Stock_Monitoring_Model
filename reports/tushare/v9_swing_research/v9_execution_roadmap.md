@@ -24,7 +24,7 @@
 | Stage 4 行业/概念特征工程 | 刻画行业强度、拥挤度、抱团风险 | `batch3B_industry_theme_features` | 已完成 | 行业强度、行业成交集中度、个股行业暴露、概念禁用说明、handoff | 行业字段为当前快照，仅诊断；概念数据源未锁定，不启用 |
 | Stage 5 因子 IC 与分层诊断 | 训练前判断因子是否有排序能力 | `batch3C_factor_ic_decile` | 已完成 | RankIC、ICIR、10 桶收益、Top-Bottom、分状态/行业/市值/流动性 IC | 已通过进入 Batch 3D；候选仅作简单规则基准输入，不可直接训练 |
 | Stage 6 简单规则基准 | 训练前必须打败简单规则 | `batch3D_simple_rule_baseline` | 已完成 | 54 个 rule-horizon、matched random baseline、可中断 checkpoint、handoff | 已通过进入 Batch 4A 训练计划冻结；禁止直接训练 |
-| Stage 7 轻量模型研究 | 只在 Stage 5/6 通过后训练 | 后续 Batch4 | 等待 Batch 4A | Logistic/Ridge/LightGBM rank model | 先冻结训练计划、特征、标签、切分、基准和成本容量限制 |
+| Stage 7 训练计划冻结 | 冻结 horizon、label、feature、split 和 baseline | `batch4A_model_training_plan` | 已完成 | 5d 主标签、冻结特征、时间切分、Batch3D 基准 | 已通过进入 Batch 4B；禁止改计划后训练 |
 | Stage 8 稳健性与前向纸面 | 牛熊震荡、抱团、高拥挤、未见数据验证 | 后续 Batch5/6 | 禁止当前执行 | walk-forward、forward paper tracking | 历史结果不能直接转实盘 |
 
 ## 2. 已完成内容
@@ -470,6 +470,30 @@ Handoff：
 
 > Batch 4A 已完成。请确认训练计划、特征冻结和切分方式。若通过，才允许执行 Batch 4B 轻量模型训练；若不通过，只修改计划，不训练。
 
+### Stage 7A 训练计划冻结
+
+输出目录：`reports/tushare/v9_swing_research/batch4A_model_training_plan/`
+
+核心冻结：
+
+- 主训练周期：`5d`。
+- 主标签：`fwd_ret_5d_open = exit_adj_close_5d / entry_adj_open - 1`。
+- 主训练特征：`log_amount`、`turnover_rate`、`log_total_mv`、`stock_ret_5d`、`stock_ret_20d`、`stock_ret_60d`。
+- 条件消融特征：`stock_amount_share_in_industry`，需显式说明行业分组风险。
+- 禁用字段：当前快照行业字段、概念/题材字段、未通过 Batch3C 的字段。
+- 切分：train 20180102-20221230，validation 20230103-20241231，research_holdout 20250102-20260522。
+- 基准：Batch3D 的 5d 简单规则和 matched random baseline。
+
+重要限制：
+
+- `research_holdout` 不是完全未见最终测试集，因为 Batch3C/3D 已看过全历史诊断。
+- Batch4B 只能使用冻结配置训练，不能因为结果好坏切换 horizon、删样本或加特征。
+
+Handoff：
+
+- `reports/tushare/v9_swing_research/batch4A_model_training_plan/batch4A_handoff_to_batch4B.md`
+- `reports/tushare/v9_swing_research/v9_current_handoff.md`
+
 ### Step 4B: 轻量模型训练
 
 目标：只训练可解释、可复现、低复杂度模型，验证是否优于简单规则。
@@ -654,7 +678,7 @@ handoff 文件必须至少包含：
 当前最新 handoff：
 
 - `reports/tushare/v9_swing_research/v9_current_handoff.md`
-- 内容来自 `Batch 3D -> Batch 4A`
+- 内容来自 `Batch 4A -> Batch 4B`
 
 ## 6. 每阶段完成后的固定回复模板
 
@@ -678,7 +702,7 @@ handoff 文件必须至少包含：
 下一步仍不应直接训练模型。
 推荐执行：
 
-> Batch 4A: model training plan freeze
+> Batch 4B: lightweight model training, only if the Batch 4A frozen plan is accepted
 
 原因：
 
@@ -686,4 +710,4 @@ handoff 文件必须至少包含：
 - Batch 3D 结果仍是 gross cohort 诊断，没有成本、冲击、容量、重叠持仓资金账本和完整回撤约束。
 - 10d 简单规则虽然收益诊断强，但最大回撤接近 -99%，必须在 Batch 4A 先冻结训练周期、标签、特征、切分、成本容量审计和最低基准。
 - 概念/题材特征仍未锁定 point-in-time 数据源，Batch 4A 不得把它们放入训练特征。
-- Batch 4A 只能冻结计划，不训练模型；真正训练必须等待 Batch 4A 验收后另行执行 Batch 4B。
+- Batch 4A 已冻结计划；真正训练必须严格按 Batch 4A 配置另行执行 Batch 4B，不得在训练中改 horizon、特征或样本。
