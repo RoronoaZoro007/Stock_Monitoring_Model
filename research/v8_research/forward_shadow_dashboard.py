@@ -247,7 +247,7 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
         output_root = base_output_root / "runs" / run_id
 
     env = os.environ.copy()
-    env.setdefault("TUSHARE_PROXY_URL", "http://tsy.xiaodefa.cn")
+    env.setdefault("TUSHARE_PROXY_URL", "https://tt.xiaodefa.cn")
     page_tushare_token = str(payload.get("tushare_token") or "").strip()
     page_wxpusher_token = str(payload.get("wxpusher_app_token") or "").strip()
     if page_tushare_token:

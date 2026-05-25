@@ -6,7 +6,7 @@ It does not retrain models, change labels/features, connect to brokers, or place
 ## Start
 
 ```bash
-export TUSHARE_PROXY_URL='http://tsy.xiaodefa.cn'
+export TUSHARE_PROXY_URL='https://tt.xiaodefa.cn'
 
 ./scripts/run_forward_shadow_dashboard.sh
 ```
