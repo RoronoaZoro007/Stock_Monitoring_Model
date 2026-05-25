@@ -191,6 +191,36 @@ def parse_prepare_summary(stdout: str) -> dict[str, Any]:
         return {}
 
 
+def preflight_message(summary: dict[str, Any]) -> str:
+    overall = str(summary.get("overall_status") or "unknown")
+    checks = summary.get("checks") or []
+    warning_checks = [c for c in checks if str(c.get("severity")) in {"warning", "fatal"}]
+    rows = [
+        "| check | status | severity | impact |",
+        "|---|---|---|---|",
+    ]
+    for item in warning_checks[:12]:
+        rows.append(
+            "| {name} | {status} | {severity} | {impact} |".format(
+                name=str(item.get("name") or ""),
+                status=str(item.get("status") or ""),
+                severity=str(item.get("severity") or ""),
+                impact=str(item.get("impact") or item.get("error") or "")[:160].replace("|", "/"),
+            )
+        )
+    if len(rows) == 2:
+        rows.append("| all | success | info | downstream checks passed |")
+    report_path = str(summary.get("report_path") or "")
+    return "\n".join(
+        [
+            f"preflight overall_status={overall}",
+            f"report_path={report_path}",
+            "",
+            *rows,
+        ]
+    )
+
+
 def entry_file_ready(output_root: Path, trade_date: str) -> bool:
     path = output_root / "daily_entry_prices" / f"{trade_date}_entry_prices.csv"
     if not path.exists():
@@ -677,6 +707,7 @@ def main() -> None:
     parser.add_argument("--no-wait", action="store_true", help="Execute all scheduled steps immediately; intended only for operational drills.")
     parser.add_argument("--requests-per-minute", type=int, default=120)
     parser.add_argument("--batch-size", type=int, default=160)
+    parser.add_argument("--preflight-timeout", type=int, default=8)
     parser.add_argument("--lookback-trading-days", type=int, default=90)
     parser.add_argument("--skip-moneyflow", action="store_true")
     parser.add_argument("--force-refresh-minutes", action="store_true", help="Re-request minute bars even when local bars already exist; output remains deduped.")
@@ -708,10 +739,70 @@ def main() -> None:
         output_root,
         trade_date,
         "running",
+        current_step_id="preflight_downstream",
+        scheduled_time="startup",
+        completed_steps=0,
+        message="Checking downstream provider, fallback calendar, and notification connectivity.",
+        no_wait=bool(args.no_wait),
+    )
+
+    preflight_cmd = python_cmd(
+        "research/v8_research/forward_shadow_preflight.py",
+        "--trade-date",
+        trade_date,
+        "--output-root",
+        str(output_root),
+        "--rank-file",
+        str(args.rank_file),
+        "--minute-dir",
+        str(args.minute_dir),
+        "--timeout",
+        str(args.preflight_timeout),
+    )
+    if args.send_notifications and args.notification_policy != "none":
+        preflight_cmd.append("--send-notifications")
+    preflight = run_cmd(
+        "preflight_downstream",
+        "startup",
+        preflight_cmd,
+        bool(args.send_notifications),
+        int(args.topic_id),
+        notification_policy=args.notification_policy,
+        event_kind="milestone",
+    )
+    preflight_summary = parse_prepare_summary(preflight.stdout_tail)
+    preflight.message = preflight_message(preflight_summary)
+    results.append(preflight)
+    write_results(results, output_root, trade_date)
+    preflight_status = str(preflight_summary.get("overall_status") or "unknown")
+    write_live_status(
+        output_root,
+        trade_date,
+        "running",
+        current_step_id="preflight_downstream",
+        scheduled_time="startup",
+        completed_steps=len(results),
+        message=preflight.message,
+        no_wait=bool(args.no_wait),
+    )
+    if preflight_status != "success" and args.notification_policy != "none":
+        send_wxpusher(
+            f"FS {trade_date} preflight {preflight_status}",
+            "# Forward Shadow downstream preflight\n\n"
+            + preflight.message
+            + "\n\n注意：如果 WxPusher 域名不可用，本条消息也可能无法送达，请以本地页面和 JSON 为准。\n\npaper-only，不下单。",
+            args.topic_id,
+            bool(args.send_notifications),
+        )
+
+    write_live_status(
+        output_root,
+        trade_date,
+        "running",
         current_step_id="prepare_baseline",
         scheduled_time="07:30:00",
-        completed_steps=0,
-        message="Starting forward shadow paper-only runner.",
+        completed_steps=len(results),
+        message="Starting baseline preparation after downstream preflight.",
         no_wait=bool(args.no_wait),
     )
 

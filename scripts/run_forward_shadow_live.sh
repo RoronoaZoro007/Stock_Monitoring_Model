@@ -22,6 +22,7 @@ Environment:
   NO_WAIT=1                      execute schedule immediately, drill only
   REQUESTS_PER_MINUTE=120        default 120
   BATCH_SIZE=160                 default 160
+  PREFLIGHT_TIMEOUT=8            default 8 seconds per connectivity probe
 USAGE
   exit 0
 fi
@@ -50,6 +51,7 @@ TRADE_DATE="${TRADE_DATE:-auto}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-reports/tushare/v8_forward_shadow}"
 REQUESTS_PER_MINUTE="${REQUESTS_PER_MINUTE:-120}"
 BATCH_SIZE="${BATCH_SIZE:-160}"
+PREFLIGHT_TIMEOUT="${PREFLIGHT_TIMEOUT:-8}"
 LOOKBACK_TRADING_DAYS="${LOOKBACK_TRADING_DAYS:-90}"
 TOPIC_ID="${WXPUSHER_TOPIC_ID:-44635}"
 NOTIFICATION_POLICY="${NOTIFICATION_POLICY:-key_events}"
@@ -61,6 +63,7 @@ ARGS=(
   --output-root "$OUTPUT_ROOT"
   --requests-per-minute "$REQUESTS_PER_MINUTE"
   --batch-size "$BATCH_SIZE"
+  --preflight-timeout "$PREFLIGHT_TIMEOUT"
   --lookback-trading-days "$LOOKBACK_TRADING_DAYS"
   --topic-id "$TOPIC_ID"
   --notification-policy "$NOTIFICATION_POLICY"
