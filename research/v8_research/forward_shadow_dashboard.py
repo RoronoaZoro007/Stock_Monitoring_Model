@@ -865,27 +865,206 @@ def load_today_context(output_root: Path, trade_date: str) -> dict[str, Any]:
     }
 
 
+DEPENDENCY_LABELS = {
+    "env_TUSHARE_TOKEN": ("Tushare Token", "凭证"),
+    "env_WXPUSHER_APP_TOKEN": ("WxPusher Token", "凭证"),
+    "local_trade_calendar_cache": ("本地交易日历缓存", "日历"),
+    "akshare_sina_trade_calendar": ("AkShare/Sina 日历备用源", "日历"),
+    "tushare_proxy_trade_cal_api": ("Tushare 日历接口", "行情服务"),
+    "tushare_proxy_stk_mins_api": ("Tushare 分钟线接口", "行情服务"),
+    "tushare_proxy_open_auction_api": ("Tushare 开盘竞价接口", "行情服务"),
+    "wxpusher_domain_tcp_tls": ("WxPusher 推送域名", "通知"),
+    "trade_calendar_resilience": ("交易日历容错", "日历"),
+}
+
+
+def dependency_display(name: str) -> tuple[str, str]:
+    return DEPENDENCY_LABELS.get(name, (name, "其他"))
+
+
+def dependency_state(row: dict[str, Any]) -> str:
+    status = str(row.get("status") or "").lower()
+    severity = str(row.get("severity") or "").lower()
+    if severity == "fatal" or status in {"failed", "missing", "empty_response", "missing_trade_date"}:
+        return "bad"
+    if severity == "warning" or status in {"warning", "partial", "skipped"}:
+        return "warn"
+    if status in {"success", "present", "disabled", "skipped_notifications_disabled"}:
+        return "ok"
+    return "neutral"
+
+
+def dependency_state_label(state: str) -> str:
+    return {
+        "bad": "不可用",
+        "warn": "告警",
+        "ok": "正常",
+        "neutral": "未知",
+    }.get(state, "未知")
+
+
+def severity_rank(row: dict[str, Any]) -> tuple[int, str]:
+    return {"bad": 0, "warn": 1, "neutral": 2, "ok": 3}.get(dependency_state(row), 2), str(row.get("name") or "")
+
+
+def summarize_auction_guard_dependency(output_root: Path, trade_date: str) -> dict[str, Any] | None:
+    path = output_root / "data_guards" / f"{trade_date}_auction_guard_0925.json"
+    if not path.exists():
+        return None
+    data = read_json(path)
+    status = str(data.get("status") or "unknown")
+    missing_required = data.get("missing_required") or []
+    missing_optional = data.get("missing_optional") or []
+    fetch_results = data.get("fetch_results") or []
+    failed_fetch = [x for x in fetch_results if str(x.get("status") or "") == "failed"]
+    if status == "failed" or missing_required:
+        severity = "fatal"
+    elif status == "warning" or missing_optional or failed_fetch:
+        severity = "warning"
+    else:
+        severity = "info"
+    impact_parts: list[str] = []
+    if missing_required:
+        roles = sorted(set(str(x.get("role") or x.get("api_name") or "") for x in missing_required))
+        impact_parts.append("缺失 required: " + ", ".join([x for x in roles if x]))
+    if missing_optional:
+        roles = sorted(set(str(x.get("role") or x.get("api_name") or "") for x in missing_optional))
+        impact_parts.append("缺失 optional: " + ", ".join([x for x in roles if x]))
+    if failed_fetch:
+        errors = [str(x.get("error") or "") for x in failed_fetch if x.get("error")]
+        if errors:
+            impact_parts.append(errors[0])
+    return {
+        "name": "tushare_proxy_open_auction_api",
+        "display_name": "Tushare 开盘竞价接口",
+        "category": "行情服务",
+        "status": status,
+        "severity": severity,
+        "role": "T 日开盘竞价 stk_auction_o",
+        "impact": "；".join(impact_parts) or "开盘竞价检查完成",
+        "duration_seconds": data.get("duration_seconds", ""),
+        "file": str(path),
+    }
+
+
+def build_dependency_cards(rows: list[dict[str, Any]], overall_status: str) -> list[dict[str, Any]]:
+    by_name = {str(row.get("name") or ""): row for row in rows}
+
+    def card(card_id: str, title: str, names: list[str], purpose: str) -> dict[str, Any]:
+        matched = [by_name[name] for name in names if name in by_name]
+        if not matched:
+            state = "neutral"
+            summary = "未检查"
+        else:
+            state = dependency_state(sorted(matched, key=severity_rank)[0])
+            bad_or_warn = [row for row in matched if dependency_state(row) in {"bad", "warn"}]
+            summary_row = bad_or_warn[0] if bad_or_warn else matched[0]
+            summary = str(summary_row.get("impact") or summary_row.get("status") or "")
+            if not summary:
+                summary = "检查通过"
+        return {
+            "id": card_id,
+            "title": title,
+            "state": state,
+            "state_label": dependency_state_label(state),
+            "purpose": purpose,
+            "summary": summary,
+        }
+
+    cards = [
+        card(
+            "market_realtime",
+            "实时行情链路",
+            ["tushare_proxy_stk_mins_api", "tushare_proxy_open_auction_api"],
+            "开盘卖出监控、开盘竞价、尾盘分钟线",
+        ),
+        card(
+            "notification",
+            "消息推送链路",
+            ["env_WXPUSHER_APP_TOKEN", "wxpusher_domain_tcp_tls"],
+            "买入/卖出提醒与异常告警",
+        ),
+        card(
+            "calendar",
+            "交易日历链路",
+            ["local_trade_calendar_cache", "akshare_sina_trade_calendar", "tushare_proxy_trade_cal_api", "trade_calendar_resilience"],
+            "判断交易日、T-1/T-2 日期",
+        ),
+        card(
+            "credentials",
+            "凭证配置",
+            ["env_TUSHARE_TOKEN", "env_WXPUSHER_APP_TOKEN"],
+            "本次运行所需 token 是否存在",
+        ),
+    ]
+    if overall_status == "fatal" and all(item["state"] != "bad" for item in cards):
+        cards.insert(
+            0,
+            {
+                "id": "overall",
+                "title": "整体状态",
+                "state": "bad",
+                "state_label": "不可用",
+                "purpose": "启动预检",
+                "summary": "存在 fatal 依赖，但未能归入具体服务。",
+            },
+        )
+    return cards
+
+
 def load_dependency_status(output_root: Path, trade_date: str) -> dict[str, Any]:
     preflight_path = output_root / "preflight" / f"{trade_date}_preflight.json"
     preflight = read_json(preflight_path)
     checks = preflight.get("checks") or []
     rows: list[dict[str, Any]] = []
     for item in checks:
+        display_name, category = dependency_display(str(item.get("name") or ""))
         rows.append(
             {
                 "name": item.get("name", ""),
+                "display_name": display_name,
+                "category": category,
                 "status": item.get("status", ""),
                 "severity": item.get("severity", ""),
                 "role": item.get("role", ""),
                 "impact": item.get("impact") or item.get("error") or "",
                 "duration_seconds": item.get("duration_seconds", ""),
+                "state": "",
             }
         )
+    auction_row = summarize_auction_guard_dependency(output_root, trade_date)
+    if auction_row:
+        rows.append(auction_row)
+    for row in rows:
+        row["state"] = dependency_state(row)
+    rows = sorted(rows, key=severity_rank)
+    issues = [row for row in rows if row["state"] in {"bad", "warn"}]
+    overall_status = str(preflight.get("overall_status") or ("missing" if not preflight else "unknown"))
+    if any(row["state"] == "bad" for row in rows):
+        ui_state = "bad"
+    elif any(row["state"] == "warn" for row in rows) or overall_status in {"warning", "missing", "unknown"}:
+        ui_state = "warn"
+    else:
+        ui_state = "ok"
+    if ui_state == "bad":
+        headline = "依赖不可用，今日流程应暂停"
+        action = "等待服务商恢复后重新启动；不要用迟到数据事后生成实时信号。"
+    elif ui_state == "warn":
+        headline = "依赖存在告警，需要确认"
+        action = "查看异常项；关键行情链路告警时不要继续生成有效买卖信号。"
+    else:
+        headline = "依赖检查通过"
+        action = "行情、通知和日历链路当前可用。"
     return {
-        "overall_status": preflight.get("overall_status") or ("missing" if not preflight else "unknown"),
+        "overall_status": overall_status,
+        "ui_state": ui_state,
+        "headline": headline,
+        "action": action,
         "generated_time_beijing": preflight.get("generated_time_beijing", ""),
         "prior_trade_date_for_probe": preflight.get("prior_trade_date_for_probe", ""),
         "checks": rows,
+        "issues": issues,
+        "cards": build_dependency_cards(rows, overall_status),
         "file": str(preflight_path),
         "exists": preflight_path.exists(),
     }
@@ -1085,6 +1264,61 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .action-card h2 {{ margin: 0; }}
     .action-meta {{ color: var(--muted); font-size: 12px; margin-top: 4px; }}
     .value-big {{ font-size: 24px; font-weight: 700; line-height: 1.2; }}
+    .dependency-box {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fcfcfd;
+      padding: 12px;
+    }}
+    .dependency-banner {{
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: start;
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      margin: 8px 0 12px;
+    }}
+    .dependency-banner.bad {{ background: #fff6f5; border-color: #fecdca; color: var(--bad); }}
+    .dependency-banner.warn {{ background: #fffaeb; border-color: #fedf89; color: var(--warn); }}
+    .dependency-banner.ok {{ background: #ecfdf3; border-color: #abefc6; color: var(--ok); }}
+    .dependency-icon {{
+      display: inline-flex;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      background: rgba(255,255,255,.72);
+      border: 1px solid currentColor;
+    }}
+    .dependency-title {{ font-size: 15px; font-weight: 700; color: inherit; }}
+    .dependency-action {{ color: var(--text); margin-top: 3px; }}
+    .dependency-cards {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }}
+    .dependency-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      padding: 10px;
+      min-height: 108px;
+    }}
+    .dependency-card.bad {{ border-color: #fecdca; background: #fff6f5; }}
+    .dependency-card.warn {{ border-color: #fedf89; background: #fffaeb; }}
+    .dependency-card.ok {{ border-color: #abefc6; background: #ecfdf3; }}
+    .dependency-card.neutral {{ background: #f8fafc; }}
+    .dependency-card-head {{ display: flex; align-items: center; justify-content: space-between; gap: 8px; }}
+    .dependency-card-title {{ font-weight: 700; }}
+    .dependency-card-purpose {{ color: var(--muted); font-size: 12px; margin-top: 6px; }}
+    .dependency-card-summary {{ margin-top: 8px; color: var(--text); font-size: 12px; }}
+    .dependency-section-title {{ font-size: 13px; color: var(--muted); font-weight: 700; margin: 12px 0 4px; }}
     .table-wrap {{ overflow-x: auto; }}
     table {{ width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }}
     th, td {{ border-bottom: 1px solid var(--line); padding: 8px 7px; text-align: left; vertical-align: top; }}
@@ -1097,6 +1331,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .status-chip.running {{ background: #eff8ff; color: #175cd3; border-color: #b2ddff; }}
     .status-chip.waiting {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
     .status-chip.warning, .status-chip.partial {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
+    .status-chip.fatal, .status-chip.bad, .status-chip.empty_response, .status-chip.missing, .status-chip.missing_trade_date {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
+    .status-chip.info, .status-chip.ok, .status-chip.present {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .status-chip.pending {{ background: #f2f4f7; color: #475467; border-color: #d0d5dd; }}
     .status-chip.skipped {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
     .status-chip.failed {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
@@ -1153,7 +1389,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .status-line {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
     .nowrap {{ white-space: nowrap; }}
     @media (max-width: 920px) {{
-      .grid, .compact-grid, .metrics, .hero, .two, .three, .secret-row {{ grid-template-columns: 1fr; }}
+      .grid, .compact-grid, .metrics, .hero, .two, .three, .secret-row, .dependency-cards {{ grid-template-columns: 1fr; }}
       main {{ padding: 14px; }}
       .control-head {{ flex-direction: column; }}
     }}
@@ -1337,8 +1573,17 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         <div class="two" style="margin-top:16px">
           <div>
             <h2>依赖连通性</h2>
-            <div id="dependencyMeta" class="muted"></div>
-            <div id="dependencyTable"></div>
+            <div id="dependencyPanel" class="dependency-box">
+              <div id="dependencyMeta" class="muted"></div>
+              <div id="dependencyBanner"></div>
+              <div id="dependencyCards"></div>
+              <div class="dependency-section-title">异常项</div>
+              <div id="dependencyIssues"></div>
+              <details>
+                <summary>完整检查明细</summary>
+                <div id="dependencyTable"></div>
+              </details>
+            </div>
           </div>
           <div>
             <h2>四线路状态</h2>
@@ -1543,6 +1788,39 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       }}
       return Array.from(map.values());
     }}
+    function dependencyIcon(state) {{
+      if (state === 'bad') return '!';
+      if (state === 'warn') return '?';
+      if (state === 'ok') return '✓';
+      return '-';
+    }}
+    function dependencyStatusClass(state) {{
+      if (state === 'bad') return 'failed';
+      if (state === 'warn') return 'warning';
+      if (state === 'ok') return 'success';
+      return 'pending';
+    }}
+    function renderDependencyBanner(deps) {{
+      const state = deps.ui_state || 'neutral';
+      const cls = state === 'bad' ? 'bad' : (state === 'warn' ? 'warn' : (state === 'ok' ? 'ok' : 'neutral'));
+      return '<div class="dependency-banner ' + cls + '">' +
+        '<div class="dependency-icon">' + esc(dependencyIcon(state)) + '</div>' +
+        '<div><div class="dependency-title">' + esc(deps.headline || '依赖状态未知') + '</div>' +
+        '<div class="dependency-action">' + esc(deps.action || '') + '</div></div>' +
+        '</div>';
+    }}
+    function renderDependencyCards(cards) {{
+      if (!cards || !cards.length) return '<div class="empty">暂无依赖分组数据</div>';
+      return '<div class="dependency-cards">' + cards.map(card => {{
+        const state = card.state || 'neutral';
+        return '<div class="dependency-card ' + esc(state) + '">' +
+          '<div class="dependency-card-head"><span class="dependency-card-title">' + esc(card.title || '-') + '</span>' +
+          '<span class="status-chip ' + dependencyStatusClass(state) + '">' + esc(card.state_label || '-') + '</span></div>' +
+          '<div class="dependency-card-purpose">' + esc(card.purpose || '-') + '</div>' +
+          '<div class="dependency-card-summary">' + esc(compactText(card.summary || '-', 96)) + '</div>' +
+          '</div>';
+      }}).join('') + '</div>';
+    }}
     function stepDescription(step) {{
       const map = {{
         preflight_downstream: '启动预检：检查 Tushare、分钟线接口、WxPusher 与日历 fallback 连通性',
@@ -1704,12 +1982,23 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         {{key:'strategy_id', label:'line_id'}}, {{key:'tail_down_flag', label:'tail_down'}}, {{key:'selected_count', label:'selected', type:'number'}}, {{key:'no_trade_reason', label:'no_trade'}}
       ]);
       $('dependencyMeta').textContent = deps.exists
-        ? ('overall: ' + (deps.overall_status || '-') + '；updated: ' + (deps.generated_time_beijing || '-') + '；probe prior: ' + (deps.prior_trade_date_for_probe || '-'))
+        ? ('最近预检：' + (deps.generated_time_beijing || '-') + '；探活参考交易日：' + (deps.prior_trade_date_for_probe || '-') + '；原始 overall=' + (deps.overall_status || '-'))
         : '尚未生成启动预检文件。';
-      $('dependencyTable').innerHTML = table(deps.checks || [], [
-        {{key:'name', label:'依赖/检查项'}},
+      $('dependencyBanner').innerHTML = renderDependencyBanner(deps);
+      $('dependencyCards').innerHTML = renderDependencyCards(deps.cards || []);
+      $('dependencyIssues').innerHTML = table(deps.issues || [], [
+        {{key:'display_name', label:'异常依赖'}},
         {{key:'status', label:'状态', type:'status'}},
-        {{key:'severity', label:'级别'}},
+        {{key:'severity', label:'级别', type:'status'}},
+        {{key:'role', label:'用途'}},
+        {{key:'impact', label:'影响/错误', type:'message'}},
+        {{key:'duration_seconds', label:'耗时', type:'seconds'}}
+      ]);
+      $('dependencyTable').innerHTML = table(deps.checks || [], [
+        {{key:'category', label:'类别'}},
+        {{key:'display_name', label:'依赖/检查项'}},
+        {{key:'status', label:'状态', type:'status'}},
+        {{key:'severity', label:'级别', type:'status'}},
         {{key:'role', label:'用途'}},
         {{key:'duration_seconds', label:'耗时', type:'seconds'}},
         {{key:'impact', label:'影响/错误', type:'message'}}
