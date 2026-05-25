@@ -12,7 +12,7 @@ Usage:
 Environment:
   TUSHARE_TOKEN=...              required
   WXPUSHER_APP_TOKEN=...         required when SEND_NOTIFICATIONS=1
-  TUSHARE_PROXY_URL=...          default http://tsy.xiaodefa.cn
+  TUSHARE_PROXY_URL=...          default https://tt.xiaodefa.cn
   TRADE_DATE=YYYYMMDD            default current Beijing date
   SEND_NOTIFICATIONS=1|0         default 1
   WXPUSHER_TOPIC_ID=44635        default 44635
@@ -37,7 +37,7 @@ if [[ "${SEND_NOTIFICATIONS:-1}" == "1" && -z "${WXPUSHER_APP_TOKEN:-}" ]]; then
   exit 2
 fi
 
-export TUSHARE_PROXY_URL="${TUSHARE_PROXY_URL:-http://tsy.xiaodefa.cn}"
+export TUSHARE_PROXY_URL="${TUSHARE_PROXY_URL:-https://tt.xiaodefa.cn}"
 
 if [[ ! -d ".venv" ]]; then
   python3 -m venv .venv

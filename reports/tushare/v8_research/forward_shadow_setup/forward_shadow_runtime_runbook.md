@@ -23,7 +23,7 @@ Use environment variables:
 ```bash
 export WXPUSHER_APP_TOKEN="replace_with_wxpusher_app_token"
 export TUSHARE_TOKEN="..."
-export TUSHARE_PROXY_URL="http://tsy.xiaodefa.cn"
+export TUSHARE_PROXY_URL="https://tt.xiaodefa.cn"
 ```
 
 The checked-in config stores only the non-sensitive WxPusher topic id:

@@ -57,7 +57,7 @@ python tail_strategy_research.py train-evaluate --validation-start 2026-02-21 --
 已新增 `tushare_data_pipeline.py`，用于通过第三方 Tushare 代理做可断点的数据回填。Token 不应写进代码，使用环境变量：
 
 ```bash
-export TUSHARE_PROXY_URL=http://tsy.xiaodefa.cn
+export TUSHARE_PROXY_URL=https://tt.xiaodefa.cn
 export TUSHARE_TOKEN=你的56位key
 ```
 
@@ -105,7 +105,7 @@ cd Stock_Monitoring_Model
 export TUSHARE_TOKEN='你的 Tushare token'
 export WXPUSHER_APP_TOKEN='你的 WxPusher app token'
 export WXPUSHER_TOPIC_ID='44635'
-export TUSHARE_PROXY_URL='http://tsy.xiaodefa.cn'
+export TUSHARE_PROXY_URL='https://tt.xiaodefa.cn'
 
 ./scripts/run_forward_shadow_live.sh
 ```

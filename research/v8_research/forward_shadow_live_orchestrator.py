@@ -194,7 +194,7 @@ def env_check(send_notifications: bool) -> None:
             + ", ".join(missing)
             + ". Export them in shell; never commit tokens."
         )
-    os.environ.setdefault("TUSHARE_PROXY_URL", "http://tsy.xiaodefa.cn")
+    os.environ.setdefault("TUSHARE_PROXY_URL", "https://tt.xiaodefa.cn")
 
 
 def parse_prepare_summary(stdout: str) -> dict[str, Any]:

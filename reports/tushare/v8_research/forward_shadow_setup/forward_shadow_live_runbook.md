@@ -15,7 +15,7 @@ cd Stock_Monitoring_Model
 export TUSHARE_TOKEN='replace_with_your_token'
 export WXPUSHER_APP_TOKEN='replace_with_your_wxpusher_app_token'
 export WXPUSHER_TOPIC_ID='44635'
-export TUSHARE_PROXY_URL='http://tsy.xiaodefa.cn'
+export TUSHARE_PROXY_URL='https://tt.xiaodefa.cn'
 
 ./scripts/run_forward_shadow_live.sh
 ```
@@ -101,7 +101,7 @@ They are intentionally ignored by Git.
 | variable | required | default |
 |---|---:|---|
 | `TUSHARE_TOKEN` | yes | none |
-| `TUSHARE_PROXY_URL` | no | `http://tsy.xiaodefa.cn` |
+| `TUSHARE_PROXY_URL` | no | `https://tt.xiaodefa.cn` |
 | `WXPUSHER_APP_TOKEN` | yes if sending | none |
 | `WXPUSHER_TOPIC_ID` | no | `44635` |
 | `SEND_NOTIFICATIONS` | no | `1` |

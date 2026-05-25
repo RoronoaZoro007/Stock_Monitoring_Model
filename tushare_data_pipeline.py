@@ -79,7 +79,7 @@ def get_token() -> str:
 
 
 def get_proxy_url() -> str:
-    return os.environ.get("TUSHARE_PROXY_URL", "http://tsy.xiaodefa.cn").rstrip("/")
+    return os.environ.get("TUSHARE_PROXY_URL", "https://tt.xiaodefa.cn").rstrip("/")
 
 
 def redact_token(text: str, token: str | None = None) -> str:
