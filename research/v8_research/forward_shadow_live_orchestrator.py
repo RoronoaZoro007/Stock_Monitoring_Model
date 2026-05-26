@@ -599,28 +599,7 @@ def reconstruct_prior_if_needed(args: argparse.Namespace, trade_date: str, prior
         (
             "prior_auction_guard",
             "07:40:00",
-            python_cmd(
-                "research/v8_research/forward_shadow_data_guard.py",
-                "auction-guard",
-                "--trade-date",
-                prior,
-                "--prior-trade-date",
-                prior2,
-                "--output-root",
-                str(output_root),
-                "--auction-raw-dir",
-                str(args.auction_raw_dir),
-                "--rank-file",
-                str(args.rank_file),
-                "--top-rank",
-                "3000",
-                "--requests-per-minute",
-                str(args.requests_per_minute),
-                "--timeout",
-                str(args.preflight_timeout),
-                "--max-retries",
-                "0",
-            ),
+            auction_guard_cmd(prior, prior2, output_root, args, allow_missing_open_auction=False),
         ),
         (
             "prior_fetch_until_1430",
@@ -725,6 +704,41 @@ def minute_fetch_cmd(trade_date: str, signal_date: str | None, output_root: Path
         cmd.extend(["--rank-file", str(args.rank_file), "--top-rank", "3000"])
     if signal_date:
         cmd.extend(["--signal-date", signal_date])
+    return cmd
+
+
+def auction_guard_cmd(
+    trade_date: str,
+    prior_trade_date: str,
+    output_root: Path,
+    args: argparse.Namespace,
+    *,
+    allow_missing_open_auction: bool,
+) -> list[str]:
+    cmd = python_cmd(
+        "research/v8_research/forward_shadow_data_guard.py",
+        "auction-guard",
+        "--trade-date",
+        trade_date,
+        "--prior-trade-date",
+        prior_trade_date,
+        "--output-root",
+        str(output_root),
+        "--auction-raw-dir",
+        str(args.auction_raw_dir),
+        "--rank-file",
+        str(args.rank_file),
+        "--top-rank",
+        "3000",
+        "--requests-per-minute",
+        str(args.requests_per_minute),
+        "--timeout",
+        str(args.preflight_timeout),
+        "--max-retries",
+        "0",
+    )
+    if allow_missing_open_auction:
+        cmd.append("--allow-missing-open-auction")
     return cmd
 
 
@@ -998,29 +1012,7 @@ def main() -> None:
         (
             "auction_guard_0925",
             "09:25:30",
-            python_cmd(
-                "research/v8_research/forward_shadow_data_guard.py",
-                "auction-guard",
-                "--trade-date",
-                trade_date,
-                "--prior-trade-date",
-                prior,
-                "--output-root",
-                str(output_root),
-                "--auction-raw-dir",
-                str(args.auction_raw_dir),
-                "--rank-file",
-                str(args.rank_file),
-                "--top-rank",
-                "3000",
-                "--requests-per-minute",
-                str(args.requests_per_minute),
-                "--timeout",
-                str(args.preflight_timeout),
-                "--max-retries",
-                "0",
-                "--allow-missing-open-auction",
-            ),
+            auction_guard_cmd(trade_date, prior, output_root, args, allow_missing_open_auction=True),
             "",
         ),
     ]
@@ -1048,38 +1040,15 @@ def main() -> None:
 
     scheduled_steps.extend(
         [
+            ("auction_guard_1031_refresh", "10:31:30", auction_guard_cmd(trade_date, prior, output_root, args, allow_missing_open_auction=True), ""),
+            ("auction_guard_1300_refresh", "13:00:30", auction_guard_cmd(trade_date, prior, output_root, args, allow_missing_open_auction=True), ""),
             ("fetch_tail_until_1430", "14:30:00", minute_fetch_cmd(trade_date, None, output_root, Path(args.minute_dir), "top3000", "14:30", "until", args), ""),
             ("fetch_tail_1435_bar", "14:35:05", minute_fetch_cmd(trade_date, None, output_root, Path(args.minute_dir), "top3000", "14:35", "bar", args), ""),
             ("fetch_tail_1440_bar", "14:40:05", minute_fetch_cmd(trade_date, None, output_root, Path(args.minute_dir), "top3000", "14:40", "bar", args), ""),
             ("fetch_tail_1445_bar", "14:45:05", minute_fetch_cmd(trade_date, None, output_root, Path(args.minute_dir), "top3000", "14:45", "bar", args), ""),
+            ("auction_guard_1445_refresh", "14:45:20", auction_guard_cmd(trade_date, prior, output_root, args, allow_missing_open_auction=True), ""),
             ("fetch_tail_1450_bar", "14:50:05", minute_fetch_cmd(trade_date, None, output_root, Path(args.minute_dir), "top3000", "14:50", "bar", args), ""),
-            (
-                "auction_guard_1450_required",
-                "14:50:20",
-                python_cmd(
-                    "research/v8_research/forward_shadow_data_guard.py",
-                    "auction-guard",
-                    "--trade-date",
-                    trade_date,
-                    "--prior-trade-date",
-                    prior,
-                    "--output-root",
-                    str(output_root),
-                    "--auction-raw-dir",
-                    str(args.auction_raw_dir),
-                    "--rank-file",
-                    str(args.rank_file),
-                    "--top-rank",
-                    "3000",
-                    "--requests-per-minute",
-                    str(args.requests_per_minute),
-                    "--timeout",
-                    str(args.preflight_timeout),
-                    "--max-retries",
-                    "0",
-                ),
-                "",
-            ),
+            ("auction_guard_1450_required", "14:50:20", auction_guard_cmd(trade_date, prior, output_root, args, allow_missing_open_auction=False), ""),
             ("build_forward_features", "14:50:40", build_features_cmd(trade_date, output_root, args), ""),
             ("build_score_matrix", "14:51:20", build_score_cmd(trade_date, output_root, args), ""),
             ("freeze_signals", "14:51:50", freeze_cmd(trade_date, output_root, args), "routes"),
