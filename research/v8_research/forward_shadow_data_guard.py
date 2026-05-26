@@ -537,10 +537,16 @@ def run_auction_guard(args: argparse.Namespace) -> dict[str, Any]:
     ]
     started = time.monotonic()
     before = [auction_coverage(api, date, codes, auction_raw_dir) | {"role": role} for api, date, role in targets]
+    before_by_key = {(row["api_name"], row["trade_date"]): row for row in before}
     needs_fetch = [
         (api, date, role)
         for api, date, role in targets
-        if args.refresh or not auction_output(api, date, auction_raw_dir).exists() or auction_output(api, date, auction_raw_dir).stat().st_size == 0
+        if (
+            args.refresh
+            or not auction_output(api, date, auction_raw_dir).exists()
+            or auction_output(api, date, auction_raw_dir).stat().st_size == 0
+            or int(before_by_key.get((api, date), {}).get("rows", 0)) <= 0
+        )
     ]
     fetch_results: list[dict[str, Any]] = []
     if needs_fetch:

@@ -806,6 +806,7 @@ def main() -> None:
         str(args.provider_timeout),
         "--max-retries",
         str(args.provider_max_retries),
+        "--allow-missing-open-auction",
     ]
     auction_run = run_command(auction_cmd)
     auction_report_path = root / "data_guards" / f"{trade_date}_auction_guard_0925.json"
