@@ -224,13 +224,26 @@ class DashboardState:
         self.lock = threading.RLock()
         self.jobs: dict[str, dict[str, Any]] = {}
         self.current_job_id: str | None = None
+        self.dependency_jobs: dict[str, dict[str, Any]] = {}
+        self.current_dependency_job_id: str | None = None
 
     def current_job(self) -> dict[str, Any] | None:
         with self.lock:
             return self.jobs.get(self.current_job_id or "")
 
+    def current_dependency_job(self) -> dict[str, Any] | None:
+        with self.lock:
+            return self.dependency_jobs.get(self.current_dependency_job_id or "")
+
     def has_running_job(self) -> bool:
         job = self.current_job()
+        if not job:
+            return False
+        proc = job.get("process")
+        return bool(proc and proc.poll() is None)
+
+    def has_running_dependency_job(self) -> bool:
+        job = self.current_dependency_job()
         if not job:
             return False
         proc = job.get("process")
@@ -351,6 +364,48 @@ def command_for_job(payload: dict[str, Any], default_output_root: Path, default_
             "wxpusher_app_token": "page_input" if page_wxpusher_token else "environment",
         },
         "warnings": warnings,
+    }
+    return cmd, env, meta
+
+
+def command_for_dependency_probe(payload: dict[str, Any], default_output_root: Path) -> tuple[list[str], dict[str, str], dict[str, Any]]:
+    trade_date = normalize_trade_date(payload.get("trade_date"))
+    output_root = resolve_output_root(str(payload.get("output_root") or ""), default_output_root)
+    timeout = int(payload.get("timeout") or 8)
+    env = os.environ.copy()
+    env.setdefault("TUSHARE_PROXY_URL", "https://tt.xiaodefa.cn")
+    page_tushare_token = str(payload.get("tushare_token") or "").strip()
+    page_wxpusher_token = str(payload.get("wxpusher_app_token") or "").strip()
+    if page_tushare_token:
+        env["TUSHARE_TOKEN"] = page_tushare_token
+    if page_wxpusher_token:
+        env["WXPUSHER_APP_TOKEN"] = page_wxpusher_token
+    health = env_health(send_notifications=False, env=env)
+    if health["missing_required"]:
+        raise ValueError("missing credentials: " + ", ".join(health["missing_required"]) + ". Set env vars or enter them on the page.")
+    cmd = [
+        sys.executable,
+        "research/v8_research/forward_shadow_preflight.py",
+        "--trade-date",
+        trade_date,
+        "--output-root",
+        str(output_root),
+        "--rank-file",
+        str(ROOT / "data_tushare" / "manifests" / "liquid_top3000_20251120_20260213.csv"),
+        "--minute-dir",
+        str(ROOT / "data_tushare" / "raw" / "stk_mins" / "freq=5min"),
+        "--timeout",
+        str(timeout),
+    ]
+    meta = {
+        "trade_date": trade_date,
+        "output_root": str(output_root),
+        "mode": "dependency_probe",
+        "timeout": timeout,
+        "credential_source": {
+            "tushare_token": "page_input" if page_tushare_token else "environment",
+            "wxpusher_app_token": "page_input" if page_wxpusher_token else "environment",
+        },
     }
     return cmd, env, meta
 
@@ -485,6 +540,50 @@ def start_job(state: DashboardState, payload: dict[str, Any]) -> dict[str, Any]:
     with state.lock:
         state.jobs[job_id] = job
         state.current_job_id = job_id
+    thread = threading.Thread(target=consume_process, args=(job, state), daemon=True)
+    thread.start()
+    return job
+
+
+def start_dependency_probe(state: DashboardState, payload: dict[str, Any]) -> dict[str, Any]:
+    with state.lock:
+        if state.has_running_dependency_job():
+            raise RuntimeError("dependency probe is already running")
+    job_id = uuid.uuid4().hex[:12]
+    payload = dict(payload)
+    payload["_job_id"] = job_id
+    cmd, env, meta = command_for_dependency_probe(payload, state.output_root)
+    DEFAULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = DEFAULT_LOG_DIR / f"{meta['trade_date']}_dependency_{job_id}.log"
+    proc = subprocess.Popen(
+        cmd,
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        preexec_fn=os.setsid if hasattr(os, "setsid") else None,
+    )
+    job = {
+        "job_id": job_id,
+        "status": "running",
+        "process": proc,
+        "pid": proc.pid,
+        "command": cmd,
+        "safe_command": cmd,
+        "meta": meta,
+        "started_at_beijing": bj_now().isoformat(timespec="seconds"),
+        "finished_at_beijing": None,
+        "return_code": None,
+        "log_path": str(log_path),
+        "log_tail": deque(maxlen=300),
+        "snapshot_path": None,
+        "snapshot_error": None,
+    }
+    with state.lock:
+        state.dependency_jobs[job_id] = job
+        state.current_dependency_job_id = job_id
     thread = threading.Thread(target=consume_process, args=(job, state), daemon=True)
     thread.start()
     return job
@@ -1400,6 +1499,23 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       background: #fcfcfd;
       padding: 12px;
     }}
+    .dependency-toolbar {{
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }}
+    .dependency-monitor {{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .dependency-toolbar button {{ min-width: 120px; padding: 8px 12px; }}
     .dependency-banner {{
       display: grid;
       grid-template-columns: auto 1fr;
@@ -1719,6 +1835,13 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
           <div>
             <h2>依赖连通性</h2>
             <div id="dependencyPanel" class="dependency-box">
+              <div class="dependency-toolbar">
+                <div class="dependency-monitor">
+                  <span id="dependencyMonitorStatus" class="status-chip pending">监测状态：空闲</span>
+                  <span id="dependencyMonitorMeta">未手动刷新</span>
+                </div>
+                <button id="dependencyRefreshBtn" class="secondary">刷新依赖连通性</button>
+              </div>
               <div id="dependencyMeta" class="muted"></div>
               <div id="dependencyBanner"></div>
               <div id="dependencyCards"></div>
@@ -2056,8 +2179,30 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       setMessage(data.message || '停止请求已发送', !data.stopped);
       refresh();
     }}
+    async function refreshDependencies() {{
+      const payload = {{
+        trade_date: dateToYmd($('tradeDate').value),
+        output_root: $('outputRoot').value,
+        tushare_token: $('tushareToken').value.trim(),
+        wxpusher_app_token: $('wxpusherToken').value.trim(),
+        timeout: 8
+      }};
+      const resp = await fetch('/api/dependency-refresh', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify(payload)
+      }});
+      const data = await resp.json();
+      if (!resp.ok) {{
+        setMessage(data.error || '依赖探活启动失败', true);
+        return;
+      }}
+      setMessage('依赖连通性刷新已启动：' + (data.job?.job_id || '-'));
+      refresh();
+    }}
     function render(data) {{
       const job = data.job;
+      const depJob = data.dependency_monitor || null;
       const artifacts = data.artifacts || {{}};
       const live = artifacts.live_status || {{}};
       const progress = artifacts.progress || {{}};
@@ -2073,6 +2218,14 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('dataSourcePill').textContent = 'source: ' + (data.display_source || data.data_source_mode || 'history');
       $('runIdPill').textContent = 'run_id: ' + (data.display_run_id || job?.meta?.run_id || '-');
       $('pidPill').textContent = 'pid: ' + (job?.pid || '-');
+      const depRunning = !!depJob?.running;
+      const depStatus = depJob ? (depJob.status || 'unknown') : 'idle';
+      $('dependencyMonitorStatus').textContent = '监测状态：' + (depRunning ? '运行中' : (depJob ? depStatus : '空闲'));
+      $('dependencyMonitorStatus').className = 'status-chip ' + (depRunning ? 'running' : (depStatus === 'completed' ? 'success' : (depStatus === 'failed' ? 'failed' : 'pending')));
+      $('dependencyMonitorMeta').textContent = depJob
+        ? ('job_id=' + (depJob.job_id || '-') + '；开始=' + (depJob.started_at_beijing || '-') + '；结束=' + (depJob.finished_at_beijing || '-'))
+        : '未手动刷新';
+      $('dependencyRefreshBtn').disabled = depRunning;
       if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
       if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
       $('currentStep').textContent = live.current_step_id || '-';
@@ -2240,6 +2393,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     }});
     $('stopBtn').addEventListener('click', stopJob);
     $('refreshBtn').addEventListener('click', refresh);
+    $('dependencyRefreshBtn').addEventListener('click', refreshDependencies);
     function clearActiveRunAndRefresh() {{
       activeRunJobId = '';
       localStorage.removeItem('forwardShadowActiveJobId');
@@ -2287,6 +2441,8 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                 with state.lock:
                     job = state.current_job()
                     public = public_job(job)
+                    dependency_job = state.current_dependency_job()
+                    dependency_public = public_job(dependency_job)
                 trade_date = None
                 base_output_root = state.output_root
                 if public and public.get("meta"):
@@ -2352,6 +2508,19 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     if meta_output_root == display_output_root:
                         dependency_source_label = "当前页面任务输出"
                         dependency_source_note = "读取当前 dashboard 任务输出目录；任务启动后会刷新为本次预检结果。"
+                if dependency_public and dependency_public.get("meta"):
+                    dep_meta = dependency_public["meta"]
+                    dep_output_root = resolve_output_root(str(dep_meta.get("output_root") or ""), base_output_root)
+                    if str(dep_meta.get("trade_date") or "") == display_trade_date and dep_output_root == display_output_root:
+                        if dependency_public.get("running"):
+                            dependency_source_label = "手动探活运行中"
+                            dependency_source_note = "正在重新执行依赖连通性检查；完成后会刷新本区域结果。"
+                        elif dependency_public.get("status") == "completed":
+                            dependency_source_label = "刚刚手动刷新"
+                            dependency_source_note = "读取最近一次手动刷新生成的 preflight 文件。"
+                        elif dependency_public.get("status") == "failed":
+                            dependency_source_label = "手动探活失败"
+                            dependency_source_note = "最近一次手动刷新失败；请查看监测状态和日志。"
                 payload = {
                     "default_trade_date": today_ymd(),
                     "requested_trade_date": trade_date,
@@ -2372,6 +2541,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     },
                     "env": env_health(send_notifications=True),
                     "job": public,
+                    "dependency_monitor": dependency_public,
                     "artifacts": dashboard_artifacts(
                         display_output_root,
                         display_trade_date,
@@ -2397,6 +2567,13 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                 return
             if self.path == "/api/stop":
                 write_json_response(self, HTTPStatus.OK, stop_job(state))
+                return
+            if self.path == "/api/dependency-refresh":
+                try:
+                    job = start_dependency_probe(state, self.read_body_json())
+                    write_json_response(self, HTTPStatus.OK, {"job": public_job(job)})
+                except Exception as exc:
+                    write_json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
             write_json_response(self, HTTPStatus.NOT_FOUND, {"error": "not found"})
 
