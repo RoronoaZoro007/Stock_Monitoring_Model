@@ -1054,15 +1054,29 @@ def dependency_display(name: str) -> tuple[str, str]:
 
 
 def dependency_state(row: dict[str, Any]) -> str:
+    name = str(row.get("name") or "")
     status = str(row.get("status") or "").lower()
     severity = str(row.get("severity") or "").lower()
-    if severity == "fatal" or status in {"failed", "missing", "empty_response", "missing_trade_date"}:
+    if severity == "fatal" or status in {"failed", "missing"}:
         return "bad"
+    if status == "empty_response":
+        return "bad" if name == "today_realtime_data_ok" else "warn"
+    if status == "missing_trade_date":
+        return "warn"
     if severity == "warning" or status in {"warning", "partial", "skipped"}:
         return "warn"
     if status in {"success", "present", "disabled", "skipped_notifications_disabled"}:
         return "ok"
     return "neutral"
+
+
+def is_nonblocking_dependency_warning(row: dict[str, Any], by_name: dict[str, dict[str, Any]]) -> bool:
+    name = str(row.get("name") or "")
+    status = str(row.get("status") or "").lower()
+    resilience = by_name.get("trade_calendar_resilience", {})
+    if name == "local_trade_calendar_cache" and status == "missing_trade_date":
+        return str(resilience.get("status") or "").lower() == "success"
+    return False
 
 
 def dependency_state_label(state: str) -> str:
@@ -1127,12 +1141,16 @@ def build_dependency_cards(rows: list[dict[str, Any]], overall_status: str) -> l
             state = "neutral"
             summary = "未检查"
         else:
-            state = dependency_state(sorted(matched, key=severity_rank)[0])
-            bad_or_warn = [row for row in matched if dependency_state(row) in {"bad", "warn"}]
-            summary_row = bad_or_warn[0] if bad_or_warn else matched[0]
-            summary = str(summary_row.get("impact") or summary_row.get("status") or "")
-            if not summary:
-                summary = "检查通过"
+            if card_id == "calendar" and str(by_name.get("trade_calendar_resilience", {}).get("status") or "").lower() == "success":
+                state = "ok"
+                summary = "供应商日历/备用日历可用；本地缓存缺口不阻断流程。"
+            else:
+                state = dependency_state(sorted(matched, key=severity_rank)[0])
+                bad_or_warn = [row for row in matched if dependency_state(row) in {"bad", "warn"}]
+                summary_row = bad_or_warn[0] if bad_or_warn else matched[0]
+                summary = str(summary_row.get("impact") or summary_row.get("status") or "")
+                if not summary:
+                    summary = "检查通过"
         return {
             "id": card_id,
             "title": title,
@@ -1248,10 +1266,12 @@ def load_dependency_status(
         row["state"] = dependency_state(row)
     rows = sorted(rows, key=severity_rank)
     issues = [row for row in rows if row["state"] in {"bad", "warn"}]
+    by_name = {str(row.get("name") or ""): row for row in rows}
+    blocking_issues = [row for row in issues if not is_nonblocking_dependency_warning(row, by_name)]
     overall_status = str(preflight.get("overall_status") or ("missing" if not preflight else "unknown"))
-    if any(row["state"] == "bad" for row in rows):
+    if any(row["state"] == "bad" for row in blocking_issues):
         ui_state = "bad"
-    elif any(row["state"] == "warn" for row in rows) or overall_status in {"warning", "missing", "unknown"}:
+    elif any(row["state"] == "warn" for row in blocking_issues) or overall_status in {"missing", "unknown"}:
         ui_state = "warn"
     else:
         ui_state = "ok"
@@ -1266,8 +1286,8 @@ def load_dependency_status(
         headline = "依赖存在告警，需要确认"
         action = "查看异常项；关键行情链路告警时不要继续生成有效买卖信号。"
     else:
-        headline = "依赖检查通过"
-        action = "行情、通知和日历链路当前可用。"
+        headline = "依赖检查通过" if not issues else "关键依赖可用，有非阻断告警"
+        action = "行情、通知和日历链路当前可用。" if not issues else "供应商行情和日历接口可用；本地缓存缺口已由 provider/fallback 覆盖，不阻断流程。"
     return {
         "overall_status": overall_status,
         "ui_state": ui_state,
@@ -1591,8 +1611,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .status-chip.success {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .status-chip.running {{ background: #eff8ff; color: #175cd3; border-color: #b2ddff; }}
     .status-chip.waiting {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
-    .status-chip.warning, .status-chip.partial, .status-chip.stale, .status-chip.stale_running {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
-    .status-chip.fatal, .status-chip.bad, .status-chip.empty_response, .status-chip.missing, .status-chip.missing_trade_date {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
+    .status-chip.warning, .status-chip.partial, .status-chip.stale, .status-chip.stale_running, .status-chip.missing_trade_date {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
+    .status-chip.fatal, .status-chip.bad, .status-chip.empty_response, .status-chip.missing {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
     .status-chip.info, .status-chip.ok, .status-chip.present {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .status-chip.pending {{ background: #f2f4f7; color: #475467; border-color: #d0d5dd; }}
     .status-chip.skipped {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
