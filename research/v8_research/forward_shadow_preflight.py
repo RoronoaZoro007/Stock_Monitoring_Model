@@ -34,6 +34,14 @@ def bj_now() -> str:
     return datetime.now(BEIJING_TZ).isoformat(timespec="seconds")
 
 
+def bj_datetime() -> datetime:
+    return datetime.now(BEIJING_TZ)
+
+
+def today_ymd() -> str:
+    return bj_datetime().strftime("%Y%m%d")
+
+
 def ymd_to_iso(value: str) -> str:
     s = str(value).replace("-", "")[:8]
     return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
@@ -246,6 +254,139 @@ def check_stk_mins_api(token: str, trade_date: str, prior: str, rank_file: Path,
         )
 
 
+def realtime_expected_checks(trade_date: str) -> tuple[bool, str | None, str]:
+    current_day = today_ymd()
+    if trade_date > current_day:
+        return False, None, "future_trade_date"
+    if trade_date < current_day:
+        return True, "14:50:00", "historical_realtime_replay"
+    now = bj_datetime()
+    hhmm = now.hour * 100 + now.minute
+    if hhmm < 925:
+        return False, None, "before_open_auction_expected_time"
+    if hhmm < 935:
+        return True, None, "open_auction_due_minute_not_due"
+    if hhmm >= 1450:
+        return True, "14:50:00", "tail_signal_realtime_due"
+    if hhmm >= 1030:
+        return True, "10:30:00", "default_exit_realtime_due"
+    return True, "09:35:00", "first_exit_realtime_due"
+
+
+def check_today_realtime_data(token: str, trade_date: str, rank_file: Path, timeout: int) -> dict[str, Any]:
+    started = time.monotonic()
+    expected, minute_time, phase = realtime_expected_checks(trade_date)
+    if not expected:
+        return check_result(
+            "today_realtime_data_ok",
+            "pending",
+            "info",
+            started,
+            base_url=get_proxy_url(),
+            phase=phase,
+            role="today_open_auction_and_intraday_minutes",
+            impact="today real-time data is not expected yet at current Beijing time",
+        )
+
+    probe_rank_file, rank_source = resolve_probe_rank_file(rank_file)
+    codes = read_probe_codes(probe_rank_file)
+    client = TushareProxyClient(token, get_proxy_url(), timeout=timeout)
+    subchecks: list[dict[str, Any]] = []
+
+    def call(api_name: str, params: dict[str, Any], expected_rows: bool = True) -> None:
+        item_started = time.monotonic()
+        try:
+            df = client.call(api_name, params)
+            rows = int(len(df))
+            subchecks.append(
+                {
+                    "api_name": api_name,
+                    "status": "success" if rows > 0 or not expected_rows else "empty_response",
+                    "rows": rows,
+                    "seconds": round(time.monotonic() - item_started, 3),
+                    "params": {k: ("<codes>" if k == "ts_code" else v) for k, v in params.items()},
+                }
+            )
+        except (TushareError, TushareRateLimit, SystemExit) as exc:
+            subchecks.append(
+                {
+                    "api_name": api_name,
+                    "status": "failed",
+                    "rows": 0,
+                    "seconds": round(time.monotonic() - item_started, 3),
+                    "params": {k: ("<codes>" if k == "ts_code" else v) for k, v in params.items()},
+                    "error": sanitize(repr(exc)),
+                }
+            )
+
+    call("stk_auction_o", {"trade_date": trade_date})
+    if minute_time:
+        if codes:
+            iso = ymd_to_iso(trade_date)
+            call(
+                "stk_mins",
+                {
+                    "ts_code": ",".join(codes),
+                    "start_date": f"{iso} {minute_time}",
+                    "end_date": f"{iso} {minute_time}",
+                    "freq": "5min",
+                },
+            )
+        else:
+            subchecks.append(
+                {
+                    "api_name": "stk_mins",
+                    "status": "skipped",
+                    "rows": 0,
+                    "seconds": 0.0,
+                    "error": "rank file unavailable for minute probe",
+                }
+            )
+
+    bad = [x for x in subchecks if x.get("status") != "success"]
+    status = "success" if not bad else "empty_response" if all(x.get("status") == "empty_response" for x in bad) else "failed"
+    if status == "success":
+        impact = "today realtime feed returned rows for all currently due probes"
+    elif status == "empty_response":
+        empty_apis = ", ".join(sorted(set(str(x.get("api_name")) for x in bad if x.get("status") == "empty_response")))
+        impact = (
+            f"接口请求成功但今日实时数据返回 0 行: {empty_apis}；"
+            "可能是供应商当日实时数据未刷新、未开放或实时服务异常，建议联系供应商核实今日 stk_mins/stk_auction_o 数据状态。"
+        )
+    else:
+        failed_apis = ", ".join(sorted(set(str(x.get("api_name")) for x in bad)))
+        impact = (
+            f"今日实时数据探活失败: {failed_apis}；"
+            "请先确认供应商接口服务、token 权限和当日实时数据发布状态。"
+        )
+    return check_result(
+        "today_realtime_data_ok",
+        status,
+        "info" if status == "success" else "warning",
+        started,
+        base_url=get_proxy_url(),
+        phase=phase,
+        trade_date=trade_date,
+        minute_probe_time=minute_time or "",
+        probe_rank_file=str(probe_rank_file),
+        rank_source=rank_source,
+        probe_codes=len(codes),
+        subchecks=subchecks,
+        role="today_open_auction_and_intraday_minutes",
+        impact=impact,
+    )
+
+
+def aggregate_check(name: str, ok: bool, started: float, *, status_if_false: str, severity_if_false: str, **extra: Any) -> dict[str, Any]:
+    return check_result(
+        name,
+        "success" if ok else status_if_false,
+        "info" if ok else severity_if_false,
+        started,
+        **extra,
+    )
+
+
 def check_local_cache(trade_date: str) -> dict[str, Any]:
     started = time.monotonic()
     open_dates = load_open_dates_from_cache()
@@ -331,8 +472,40 @@ def main() -> None:
     prior = prior_trade_date(trade_date, open_dates)
 
     if token:
-        checks.append(check_tushare_trade_cal(token, trade_date, int(args.timeout)))
-        checks.append(check_stk_mins_api(token, trade_date, prior, Path(args.rank_file), int(args.timeout)))
+        trade_cal_check = check_tushare_trade_cal(token, trade_date, int(args.timeout))
+        historical_minute_check = check_stk_mins_api(token, trade_date, prior, Path(args.rank_file), int(args.timeout))
+        checks.append(trade_cal_check)
+        checks.append(historical_minute_check)
+        checks.append(
+            aggregate_check(
+                "provider_up",
+                trade_cal_check.get("status") == "success",
+                time.monotonic(),
+                status_if_false="failed",
+                severity_if_false="warning",
+                base_url=get_proxy_url(),
+                role="provider_api_reachable",
+                impact="provider API can accept requests and return a valid trade_cal response"
+                if trade_cal_check.get("status") == "success"
+                else "provider API did not return a valid trade_cal response; check domain, service availability, or token",
+            )
+        )
+        checks.append(
+            aggregate_check(
+                "historical_data_ok",
+                historical_minute_check.get("status") == "success",
+                time.monotonic(),
+                status_if_false=str(historical_minute_check.get("status") or "failed"),
+                severity_if_false="fatal",
+                base_url=get_proxy_url(),
+                probe_trade_date=prior,
+                role="historical_minute_data_probe",
+                impact="historical stk_mins data returned rows for the prior trading day"
+                if historical_minute_check.get("status") == "success"
+                else "historical stk_mins data did not return usable rows; required for replay and baseline provider verification",
+            )
+        )
+        checks.append(check_today_realtime_data(token, trade_date, Path(args.rank_file), int(args.timeout)))
 
     if args.send_notifications:
         checks.append(check_tcp_tls(args.wxpusher_endpoint, "wxpusher_domain_tcp_tls", "warning", int(args.timeout)))

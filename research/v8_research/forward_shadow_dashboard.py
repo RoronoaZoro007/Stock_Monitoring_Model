@@ -880,6 +880,9 @@ def load_today_context(output_root: Path, trade_date: str) -> dict[str, Any]:
 
 
 DEPENDENCY_LABELS = {
+    "provider_up": ("Provider/API 可请求", "行情服务"),
+    "historical_data_ok": ("历史行情数据", "行情服务"),
+    "today_realtime_data_ok": ("今日实时行情数据", "行情服务"),
     "env_TUSHARE_TOKEN": ("Tushare Token", "凭证"),
     "env_WXPUSHER_APP_TOKEN": ("WxPusher Token", "凭证"),
     "local_trade_calendar_cache": ("本地交易日历缓存", "日历"),
@@ -987,10 +990,22 @@ def build_dependency_cards(rows: list[dict[str, Any]], overall_status: str) -> l
 
     cards = [
         card(
-            "market_realtime",
-            "实时行情链路",
-            ["tushare_proxy_stk_mins_api", "tushare_proxy_open_auction_api"],
-            "开盘卖出监控、开盘竞价、尾盘分钟线",
+            "provider_up",
+            "Provider/API 可请求",
+            ["provider_up", "tushare_proxy_trade_cal_api"],
+            "域名、token、基础 API 请求是否可用",
+        ),
+        card(
+            "historical_data",
+            "历史数据可返回",
+            ["historical_data_ok", "tushare_proxy_stk_mins_api"],
+            "历史分钟线/回放数据是否可用",
+        ),
+        card(
+            "today_realtime",
+            "今日实时数据可返回",
+            ["today_realtime_data_ok", "tushare_proxy_open_auction_api"],
+            "今日分钟线、开盘竞价等实时数据是否已返回",
         ),
         card(
             "notification",
@@ -1086,7 +1101,11 @@ def load_dependency_status(
         ui_state = "warn"
     else:
         ui_state = "ok"
-    if ui_state == "bad":
+    today_realtime_issue = next((row for row in issues if row.get("name") == "today_realtime_data_ok"), None)
+    if today_realtime_issue and today_realtime_issue.get("state") == "bad":
+        headline = "今日实时行情数据不可用"
+        action = str(today_realtime_issue.get("impact") or "今日分钟线/开盘竞价未返回可用数据，请联系供应商核实。")
+    elif ui_state == "bad":
         headline = "依赖不可用，今日流程应暂停"
         action = "等待服务商恢复后重新启动；不要用迟到数据事后生成实时信号。"
     elif ui_state == "warn":
