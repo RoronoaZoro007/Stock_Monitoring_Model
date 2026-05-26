@@ -2092,6 +2092,18 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       if (state === 'ok') return 'success';
       return 'pending';
     }}
+    function runStatusLabel(status) {{
+      const map = {{
+        completed: '已完成',
+        failed: '失败',
+        running: '运行中',
+        stopping: '停止中',
+        idle: '未启动',
+        warning: '警告',
+        stale_running: '历史状态已过期'
+      }};
+      return map[status] || status || '-';
+    }}
     function renderDependencyBanner(deps) {{
       const state = deps.ui_state || 'neutral';
       const cls = state === 'bad' ? 'bad' : (state === 'warn' ? 'warn' : (state === 'ok' ? 'ok' : 'neutral'));
@@ -2251,18 +2263,18 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       const prior = artifacts.prior_context || {{}};
       const today = artifacts.today_context || {{}};
       const deps = artifacts.dependency_status || {{}};
-      const jobStatus = job ? job.status : 'idle';
+      const jobStatus = job ? job.status : (live.status || 'idle');
       const selectedDate = data.display_trade_date || data.requested_trade_date || job?.meta?.trade_date || data.default_trade_date || '-';
-      $('jobStatus').textContent = jobStatus;
+      $('jobStatus').textContent = runStatusLabel(jobStatus);
       $('jobStatus').className = 'pill ' + (jobStatus === 'completed' ? 'ok' : (jobStatus === 'failed' ? 'bad' : (jobStatus === 'running' || jobStatus === 'stopping' ? 'warn' : '')));
-      $('modePill').textContent = 'mode: ' + (job?.meta?.mode || '-');
+      $('modePill').textContent = 'mode: ' + (job?.meta?.mode || data.data_source_mode || '-');
       $('datePill').textContent = 'date: ' + selectedDate;
       $('dataSourcePill').textContent = 'source: ' + (data.display_source || data.data_source_mode || 'history');
       $('runIdPill').textContent = 'run_id: ' + (data.display_run_id || job?.meta?.run_id || '-');
       $('pidPill').textContent = 'pid: ' + (job?.pid || '-');
       const depRunning = !!depJob?.running;
       const depStatus = depJob ? (depJob.status || 'unknown') : 'idle';
-      $('dependencyMonitorStatus').textContent = '监测状态：' + (depRunning ? '运行中' : (depJob ? depStatus : '空闲'));
+      $('dependencyMonitorStatus').textContent = '监测状态：' + (depRunning ? '运行中' : (depJob ? runStatusLabel(depStatus) : '空闲'));
       $('dependencyMonitorStatus').className = 'status-chip ' + (depRunning ? 'running' : (depStatus === 'completed' ? 'success' : (depStatus === 'failed' ? 'failed' : 'pending')));
       $('dependencyMonitorMeta').textContent = depJob
         ? ('job_id=' + (depJob.job_id || '-') + '；开始=' + (depJob.started_at_beijing || '-') + '；结束=' + (depJob.finished_at_beijing || '-'))
@@ -2270,9 +2282,12 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       updateDependencyRefreshAvailability();
       if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
       if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
+      const currentStepMeaning = live.current_step_id
+        ? stepDescription(live.current_step_id)
+        : (jobStatus === 'completed' ? '所选日期 paper tracking 流程已完成' : stepDescription(''));
       $('currentStep').textContent = live.current_step_id || '-';
-      $('currentStepMeaning').textContent = stepDescription(live.current_step_id || '');
-      $('runnerState').textContent = live.status || '-';
+      $('currentStepMeaning').textContent = currentStepMeaning;
+      $('runnerState').textContent = runStatusLabel(live.status || jobStatus || '-');
       const completed = progress.completed_steps ?? live.completed_steps ?? 0;
       const total = progress.total_steps ?? live.total_steps ?? 29;
       const pct = progress.progress_pct ?? (total ? Math.round(completed / total * 1000) / 10 : 0);
@@ -2290,8 +2305,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('overviewDate').textContent = '执行日期 ' + selectedDate;
       $('overviewHeadline').textContent = jobStatus === 'running'
         ? '运行中'
-        : (jobStatus === 'failed' ? '有错误' : (jobStatus === 'completed' ? '已完成' : '待启动 / 可查看历史'));
-      $('overviewSubline').textContent = '卖出提示 ' + sellCount + ' 条；尾盘买入候选 ' + buyCount + ' 条；当前节点：' + stepDescription(live.current_step_id || '');
+        : (jobStatus === 'failed' ? '有错误' : (jobStatus === 'completed' ? (job ? '已完成' : '历史运行已完成') : '待启动 / 可查看历史'));
+      $('overviewSubline').textContent = '卖出提示 ' + sellCount + ' 条；尾盘买入候选 ' + buyCount + ' 条；当前节点：' + currentStepMeaning;
       if (live.status === 'stale_running') {{
         $('overviewHeadline').textContent = '历史状态已过期';
         $('overviewSubline').textContent = live.stale_note || '当前展示的是旧 running 状态文件，不代表任务仍在执行；请切换“最近一次运行结果”查看最新 run_id。';
