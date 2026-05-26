@@ -396,6 +396,7 @@ def command_for_dependency_probe(payload: dict[str, Any], default_output_root: P
         str(ROOT / "data_tushare" / "raw" / "stk_mins" / "freq=5min"),
         "--timeout",
         str(timeout),
+        "--check-wxpusher-domain",
     ]
     meta = {
         "trade_date": trade_date,
@@ -1057,8 +1058,10 @@ def dependency_state(row: dict[str, Any]) -> str:
     name = str(row.get("name") or "")
     status = str(row.get("status") or "").lower()
     severity = str(row.get("severity") or "").lower()
-    if severity == "fatal" or status in {"failed", "missing"}:
+    if severity == "fatal" or status == "failed":
         return "bad"
+    if status == "missing":
+        return "warn"
     if status == "empty_response":
         return "bad" if name == "today_realtime_data_ok" else "warn"
     if status == "missing_trade_date":

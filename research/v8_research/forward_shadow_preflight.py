@@ -424,6 +424,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rank-file", default=str(DEFAULT_RANK_FILE))
     parser.add_argument("--minute-dir", default=str(DEFAULT_MINUTE_DIR))
     parser.add_argument("--send-notifications", action="store_true")
+    parser.add_argument("--check-wxpusher-domain", action="store_true", help="Probe WxPusher TCP/TLS without sending a message.")
     parser.add_argument("--wxpusher-endpoint", default="https://wxpusher.zjiecode.com/api/send/message")
     parser.add_argument("--timeout", type=int, default=8)
     return parser.parse_args()
@@ -448,17 +449,18 @@ def main() -> None:
         )
     else:
         checks.append({"name": "env_TUSHARE_TOKEN", "status": "present", "severity": "info", "duration_seconds": 0.0})
-    if args.send_notifications and not wx_token:
+    check_wxpusher = bool(args.send_notifications or args.check_wxpusher_domain)
+    if check_wxpusher and not wx_token:
         checks.append(
             {
                 "name": "env_WXPUSHER_APP_TOKEN",
                 "status": "missing",
-                "severity": "fatal",
+                "severity": "fatal" if args.send_notifications else "warning",
                 "impact": "WxPusher notifications cannot be sent",
                 "duration_seconds": 0.0,
             }
         )
-    elif args.send_notifications:
+    elif check_wxpusher:
         checks.append({"name": "env_WXPUSHER_APP_TOKEN", "status": "present", "severity": "info", "duration_seconds": 0.0})
     else:
         checks.append({"name": "env_WXPUSHER_APP_TOKEN", "status": "skipped_notifications_disabled", "severity": "info", "duration_seconds": 0.0})
@@ -507,7 +509,7 @@ def main() -> None:
         )
         checks.append(check_today_realtime_data(token, trade_date, Path(args.rank_file), int(args.timeout)))
 
-    if args.send_notifications:
+    if check_wxpusher:
         checks.append(check_tcp_tls(args.wxpusher_endpoint, "wxpusher_domain_tcp_tls", "warning", int(args.timeout)))
 
     trade_cal_provider_ok = any(c["name"] == "tushare_proxy_trade_cal_api" and c["status"] == "success" for c in checks)
