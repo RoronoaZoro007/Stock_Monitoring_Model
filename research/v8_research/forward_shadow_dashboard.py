@@ -27,6 +27,7 @@ DEFAULT_OUTPUT_ROOT = ROOT / "reports" / "tushare" / "v8_forward_shadow"
 DEFAULT_LOG_DIR = ROOT / "logs" / "forward_shadow_dashboard"
 BEIJING_TZ = timezone(timedelta(hours=8))
 MIN_TRADE_DATE = "20260521"
+STALE_RUNNING_SECONDS = 30 * 60
 DEFAULT_STEP_PLAN: list[tuple[str, str]] = [
     ("preflight_downstream", "startup"),
     ("prepare_baseline", "07:30:00"),
@@ -154,6 +155,27 @@ def parse_bj_datetime(value: str | None) -> datetime | None:
         return dt.astimezone(BEIJING_TZ)
     except Exception:
         return None
+
+
+def annotate_stale_live_status(status_doc: dict[str, Any]) -> dict[str, Any]:
+    if not status_doc or str(status_doc.get("status") or "") != "running":
+        return status_doc
+    updated = parse_bj_datetime(str(status_doc.get("updated_at_beijing") or ""))
+    if not updated:
+        return status_doc
+    stale_seconds = max(0.0, (bj_now() - updated).total_seconds())
+    if stale_seconds < STALE_RUNNING_SECONDS:
+        return status_doc
+    out = dict(status_doc)
+    out["original_status"] = "running"
+    out["status"] = "stale_running"
+    out["stale_seconds"] = round(stale_seconds, 1)
+    out["stale_threshold_seconds"] = STALE_RUNNING_SECONDS
+    out["stale_note"] = (
+        "状态文件仍标记 running，但更新时间已超过阈值；这通常是旧任务异常退出后遗留的状态，"
+        "不代表当前仍在执行。请切换到“最近一次运行结果”查看最新 run_id 输出。"
+    )
+    return out
 
 
 def write_json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
@@ -644,7 +666,7 @@ def synthesize_step_progress(
     current_status = str(status_doc.get("status") or "")
     status_updated = parse_bj_datetime(str(status_doc.get("updated_at_beijing") or ""))
     current_elapsed = None
-    if current_step and current_status == "running" and status_updated:
+    if current_step and current_status in {"running", "stale_running"} and status_updated:
         current_elapsed = max(0.0, round((bj_now() - status_updated).total_seconds(), 1))
 
     rows: list[dict[str, Any]] = []
@@ -670,7 +692,7 @@ def synthesize_step_progress(
                 }
             )
         elif step_id == current_step:
-            row["status"] = "waiting" if current_status == "waiting" else "running"
+            row["status"] = "waiting" if current_status == "waiting" else ("stale" if current_status == "stale_running" else "running")
             row["running_elapsed_seconds"] = current_elapsed if current_elapsed is not None else ""
         rows.append(row)
 
@@ -694,7 +716,7 @@ def synthesize_step_progress(
                 "index": len(rows) + 1,
                 "step_id": current_step,
                 "scheduled_time": status_doc.get("current_scheduled_time", ""),
-                "status": "waiting" if current_status == "waiting" else "running",
+                "status": "waiting" if current_status == "waiting" else ("stale" if current_status == "stale_running" else "running"),
                 "duration_seconds": "",
                 "running_elapsed_seconds": current_elapsed if current_elapsed is not None else "",
                 "return_code": "",
@@ -717,6 +739,8 @@ def synthesize_step_progress(
         "progress_pct": pct,
         "current_step_elapsed_seconds": current_elapsed,
         "current_step_id": current_step,
+        "stale_status": current_status == "stale_running",
+        "stale_seconds": status_doc.get("stale_seconds", ""),
     }
     return rows, progress
 
@@ -1148,7 +1172,7 @@ def dashboard_artifacts(
     entry_path = output_root / "daily_entry_prices" / f"{trade_date}_entry_prices.csv"
     preflight_path = output_root / "preflight" / f"{trade_date}_preflight.json"
 
-    status_doc = read_json(status_path)
+    status_doc = annotate_stale_live_status(read_json(status_path))
     steps = read_csv_rows(steps_path, max_rows=120)
     step_progress, progress = synthesize_step_progress(status_doc, steps, plan_hint=plan_hint)
     candidates = [r for r in read_csv_rows(candidate_path, max_rows=10000) if str(r.get("trade_date", "")) == trade_date]
@@ -1420,7 +1444,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     .status-chip.success {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .status-chip.running {{ background: #eff8ff; color: #175cd3; border-color: #b2ddff; }}
     .status-chip.waiting {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
-    .status-chip.warning, .status-chip.partial {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
+    .status-chip.warning, .status-chip.partial, .status-chip.stale, .status-chip.stale_running {{ background: #fffaeb; color: var(--warn); border-color: #fedf89; }}
     .status-chip.fatal, .status-chip.bad, .status-chip.empty_response, .status-chip.missing, .status-chip.missing_trade_date {{ background: #fef3f2; color: var(--bad); border-color: #fecdca; }}
     .status-chip.info, .status-chip.ok, .status-chip.present {{ background: #ecfdf3; color: var(--ok); border-color: #abefc6; }}
     .status-chip.pending {{ background: #f2f4f7; color: #475467; border-color: #d0d5dd; }}
@@ -2042,6 +2066,10 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
         ? '运行中'
         : (jobStatus === 'failed' ? '有错误' : (jobStatus === 'completed' ? '已完成' : '待启动 / 可查看历史'));
       $('overviewSubline').textContent = '卖出提示 ' + sellCount + ' 条；尾盘买入候选 ' + buyCount + ' 条；当前节点：' + stepDescription(live.current_step_id || '');
+      if (live.status === 'stale_running') {{
+        $('overviewHeadline').textContent = '历史状态已过期';
+        $('overviewSubline').textContent = live.stale_note || '当前展示的是旧 running 状态文件，不代表任务仍在执行；请切换“最近一次运行结果”查看最新 run_id。';
+      }}
       if (data.data_source_mode === 'rerun_clean' && data.display_source === 'rerun_clean_empty') {{
         $('overviewSubline').textContent = data.display_note || '重跑清爽视图：T 日结果等待本次 run 产生。';
       }}
