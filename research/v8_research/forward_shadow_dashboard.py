@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,7 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_ROOT = ROOT / "reports" / "tushare" / "v8_forward_shadow"
 DEFAULT_LOG_DIR = ROOT / "logs" / "forward_shadow_dashboard"
+EVENT_LOG_PATH = DEFAULT_LOG_DIR / "dashboard_events.jsonl"
 BEIJING_TZ = timezone(timedelta(hours=8))
 MIN_TRADE_DATE = "20260521"
 STALE_RUNNING_SECONDS = 30 * 60
@@ -80,6 +82,47 @@ OPTIONAL_PRIOR_STEP_PLAN: list[tuple[str, str]] = [
     ("prior_freeze_signals", "07:47:00"),
     ("prior_record_entry", "07:48:00"),
 ]
+EVENT_LOG_LOCK = threading.Lock()
+SENSITIVE_KEY_PARTS = ("token", "secret", "password", "credential")
+
+
+def redact_for_log(value: Any, key: str = "") -> Any:
+    key_l = key.lower()
+    if any(part in key_l for part in SENSITIVE_KEY_PARTS):
+        if isinstance(value, dict):
+            return {k: redact_for_log(v, k) for k, v in value.items()}
+        if value in {None, "", False}:
+            return value
+        return "<redacted>"
+    if isinstance(value, dict):
+        return {str(k): redact_for_log(v, str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact_for_log(v, key) for v in value[:50]]
+    if isinstance(value, deque):
+        return [redact_for_log(v, key) for v in list(value)[-50:]]
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="seconds")
+    return value
+
+
+def dashboard_event(event: str, **fields: Any) -> None:
+    record = {
+        "time_beijing": bj_now().isoformat(timespec="seconds"),
+        "event": event,
+        "pid": os.getpid(),
+        **redact_for_log(fields),
+    }
+    try:
+        DEFAULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(record, ensure_ascii=False, default=str)
+        with EVENT_LOG_LOCK:
+            with EVENT_LOG_PATH.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+    except Exception:
+        # Logging must never break the dashboard path.
+        pass
 
 
 def bj_now() -> datetime:
@@ -226,6 +269,7 @@ class DashboardState:
         self.current_job_id: str | None = None
         self.dependency_jobs: dict[str, dict[str, Any]] = {}
         self.current_dependency_job_id: str | None = None
+        self.last_status_signature: str = ""
 
     def current_job(self) -> dict[str, Any] | None:
         with self.lock:
@@ -469,6 +513,13 @@ def consume_process(job: dict[str, Any], state: DashboardState) -> None:
     proc: subprocess.Popen[str] = job["process"]
     log_path = Path(job["log_path"])
     status = "completed"
+    dashboard_event(
+        "job_stdout_consumer_started",
+        job_id=job.get("job_id"),
+        pid=job.get("pid"),
+        log_path=str(log_path),
+        meta=job.get("meta", {}),
+    )
     try:
         with log_path.open("a", encoding="utf-8") as log:
             assert proc.stdout is not None
@@ -489,17 +540,47 @@ def consume_process(job: dict[str, Any], state: DashboardState) -> None:
                 try:
                     snapshot_path = preserve_run_snapshot(job)
                     job["snapshot_path"] = str(snapshot_path)
+                    dashboard_event(
+                        "job_snapshot_preserved",
+                        job_id=job.get("job_id"),
+                        snapshot_path=str(snapshot_path),
+                    )
                 except Exception as exc:
                     job["snapshot_error"] = repr(exc)
+                    dashboard_event(
+                        "job_snapshot_failed",
+                        job_id=job.get("job_id"),
+                        error=repr(exc),
+                        traceback=traceback.format_exc(limit=8),
+                    )
             job["status"] = status
             job["return_code"] = return_code
             job["finished_at_beijing"] = bj_now().isoformat(timespec="seconds")
+        dashboard_event(
+            "job_finished",
+            job_id=job.get("job_id"),
+            status=status,
+            return_code=return_code,
+            started_at_beijing=job.get("started_at_beijing"),
+            finished_at_beijing=job.get("finished_at_beijing"),
+            log_path=str(log_path),
+            meta=job.get("meta", {}),
+            error=job.get("error", ""),
+        )
     except Exception as exc:
         with state.lock:
             job["status"] = "failed"
             job["error"] = repr(exc)
             job["last_error_lines"] = list(job.get("log_tail") or [])[-30:]
             job["finished_at_beijing"] = bj_now().isoformat(timespec="seconds")
+        dashboard_event(
+            "job_consumer_failed",
+            job_id=job.get("job_id"),
+            status="failed",
+            error=repr(exc),
+            traceback=traceback.format_exc(limit=12),
+            meta=job.get("meta", {}),
+        )
 
 
 def start_job(state: DashboardState, payload: dict[str, Any]) -> dict[str, Any]:
@@ -512,6 +593,13 @@ def start_job(state: DashboardState, payload: dict[str, Any]) -> dict[str, Any]:
     cmd, env, meta = command_for_job(payload, state.output_root, state.topic_id)
     DEFAULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = DEFAULT_LOG_DIR / f"{meta['trade_date']}_{job_id}.log"
+    dashboard_event(
+        "job_start_requested",
+        job_id=job_id,
+        meta=meta,
+        command=cmd,
+        log_path=str(log_path),
+    )
     proc = subprocess.Popen(
         cmd,
         cwd=ROOT,
@@ -541,6 +629,13 @@ def start_job(state: DashboardState, payload: dict[str, Any]) -> dict[str, Any]:
     with state.lock:
         state.jobs[job_id] = job
         state.current_job_id = job_id
+    dashboard_event(
+        "job_started",
+        job_id=job_id,
+        pid=proc.pid,
+        meta=meta,
+        log_path=str(log_path),
+    )
     thread = threading.Thread(target=consume_process, args=(job, state), daemon=True)
     thread.start()
     return job
@@ -556,6 +651,13 @@ def start_dependency_probe(state: DashboardState, payload: dict[str, Any]) -> di
     cmd, env, meta = command_for_dependency_probe(payload, state.output_root)
     DEFAULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = DEFAULT_LOG_DIR / f"{meta['trade_date']}_dependency_{job_id}.log"
+    dashboard_event(
+        "dependency_probe_start_requested",
+        job_id=job_id,
+        meta=meta,
+        command=cmd,
+        log_path=str(log_path),
+    )
     proc = subprocess.Popen(
         cmd,
         cwd=ROOT,
@@ -585,6 +687,13 @@ def start_dependency_probe(state: DashboardState, payload: dict[str, Any]) -> di
     with state.lock:
         state.dependency_jobs[job_id] = job
         state.current_dependency_job_id = job_id
+    dashboard_event(
+        "dependency_probe_started",
+        job_id=job_id,
+        pid=proc.pid,
+        meta=meta,
+        log_path=str(log_path),
+    )
     thread = threading.Thread(target=consume_process, args=(job, state), daemon=True)
     thread.start()
     return job
@@ -594,9 +703,11 @@ def stop_job(state: DashboardState) -> dict[str, Any]:
     with state.lock:
         job = state.current_job()
         if not job:
+            dashboard_event("job_stop_requested", stopped=False, reason="no_current_job")
             return {"stopped": False, "message": "no current job"}
         proc = job.get("process")
         if not proc or proc.poll() is not None:
+            dashboard_event("job_stop_requested", job_id=job.get("job_id"), stopped=False, reason="not_running")
             return {"stopped": False, "message": "current job is not running"}
         job["status"] = "stopping"
     try:
@@ -604,11 +715,19 @@ def stop_job(state: DashboardState) -> dict[str, Any]:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         else:
             proc.terminate()
+        dashboard_event("job_stop_requested", job_id=job.get("job_id"), pid=getattr(proc, "pid", None), stopped=True)
         return {"stopped": True, "message": "terminate signal sent"}
     except Exception as exc:
         with state.lock:
             job["status"] = "failed"
             job["error"] = repr(exc)
+        dashboard_event(
+            "job_stop_failed",
+            job_id=job.get("job_id"),
+            pid=getattr(proc, "pid", None),
+            error=repr(exc),
+            traceback=traceback.format_exc(limit=8),
+        )
         return {"stopped": False, "message": repr(exc)}
 
 
@@ -1344,6 +1463,7 @@ def dashboard_artifacts(
         "daily_signals": str(signals_path),
         "entry_prices": str(entry_path),
         "preflight": str(preflight_path),
+        "dashboard_event_log": str(EVENT_LOG_PATH),
     }
     exists = {name: Path(path).exists() for name, path in files.items()}
     return {
@@ -2580,6 +2700,68 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                         elif dependency_public.get("status") == "failed":
                             dependency_source_label = "手动探活失败"
                             dependency_source_note = "最近一次手动刷新失败；请查看监测状态和日志。"
+                artifacts = dashboard_artifacts(
+                    display_output_root,
+                    display_trade_date,
+                    prior_entry_root=prior_entry_root,
+                    plan_hint=plan_hint,
+                    dependency_source_label=dependency_source_label,
+                    dependency_source_note=dependency_source_note,
+                    suppress_dependency_history=suppress_dependency_history,
+                )
+                live_status = artifacts.get("live_status") or {}
+                prior_context = artifacts.get("prior_context") or {}
+                today_context = artifacts.get("today_context") or {}
+                dependency_status = artifacts.get("dependency_status") or {}
+                status_signature = "|".join(
+                    [
+                        str(trade_date),
+                        str(data_source_mode),
+                        str(display_trade_date),
+                        str(display_output_root),
+                        str(display_source),
+                        str(display_run_id),
+                        str((public or {}).get("job_id") or ""),
+                        str((public or {}).get("status") or ""),
+                        str(live_status.get("status") or ""),
+                        str(live_status.get("current_step_id") or ""),
+                        str(live_status.get("completed_steps") or ""),
+                        str(live_status.get("total_steps") or ""),
+                        str(dependency_status.get("overall_status") or ""),
+                        str(dependency_status.get("source_label") or ""),
+                    ]
+                )
+                with state.lock:
+                    should_log_status = status_signature != state.last_status_signature
+                    if should_log_status:
+                        state.last_status_signature = status_signature
+                if should_log_status:
+                    dashboard_event(
+                        "api_status_context_changed",
+                        requested_trade_date=trade_date,
+                        data_source_mode=data_source_mode,
+                        display_trade_date=display_trade_date,
+                        display_output_root=str(display_output_root),
+                        display_source=display_source,
+                        display_run_id=display_run_id,
+                        prior_input_policy=prior_input_policy,
+                        job_id=(public or {}).get("job_id"),
+                        job_status=(public or {}).get("status"),
+                        dependency_job_id=(dependency_public or {}).get("job_id"),
+                        dependency_job_status=(dependency_public or {}).get("status"),
+                        live_status=live_status.get("status"),
+                        current_step_id=live_status.get("current_step_id"),
+                        completed_steps=live_status.get("completed_steps"),
+                        total_steps=live_status.get("total_steps"),
+                        prior_signal_date=prior_context.get("prior_signal_date"),
+                        prior_entry_count=len(prior_context.get("entries") or []),
+                        sell_recommendation_count=len(prior_context.get("sell_recommendations") or []),
+                        sell_execution_count=len(prior_context.get("sell_execution") or []),
+                        today_buy_count=len(today_context.get("buy_signals") or []),
+                        dependency_overall_status=dependency_status.get("overall_status"),
+                        dependency_headline=dependency_status.get("headline"),
+                        dependency_source_label=dependency_status.get("source_label"),
+                    )
                 payload = {
                     "default_trade_date": today_ymd(),
                     "requested_trade_date": trade_date,
@@ -2601,15 +2783,7 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
                     "env": env_health(send_notifications=True),
                     "job": public,
                     "dependency_monitor": dependency_public,
-                    "artifacts": dashboard_artifacts(
-                        display_output_root,
-                        display_trade_date,
-                        prior_entry_root=prior_entry_root,
-                        plan_hint=plan_hint,
-                        dependency_source_label=dependency_source_label,
-                        dependency_source_note=dependency_source_note,
-                        suppress_dependency_history=suppress_dependency_history,
-                    ),
+                    "artifacts": artifacts,
                 }
                 write_json_response(self, HTTPStatus.OK, payload)
                 return
@@ -2618,22 +2792,57 @@ def make_handler(state: DashboardState) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:
             if self.path == "/api/start":
                 try:
-                    job = start_job(state, self.read_body_json())
+                    body = self.read_body_json()
+                    dashboard_event(
+                        "api_start_received",
+                        trade_date=body.get("trade_date"),
+                        mode=body.get("mode"),
+                        output_root=body.get("output_root"),
+                        run_id=body.get("run_id"),
+                        data_options={
+                            "prior_input_policy": body.get("prior_input_policy"),
+                            "use_run_id_output_dir": body.get("use_run_id_output_dir"),
+                            "preserve_run_snapshot": body.get("preserve_run_snapshot"),
+                            "force_refresh_minutes": body.get("force_refresh_minutes"),
+                            "skip_moneyflow": body.get("skip_moneyflow"),
+                        },
+                        notification_policy=body.get("notification_policy"),
+                    )
+                    job = start_job(state, body)
                     public = public_job(job)
                     write_json_response(self, HTTPStatus.OK, {"job": public})
                 except Exception as exc:
+                    dashboard_event(
+                        "api_start_failed",
+                        error=str(exc),
+                        traceback=traceback.format_exc(limit=8),
+                    )
                     write_json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
             if self.path == "/api/stop":
+                dashboard_event("api_stop_received")
                 write_json_response(self, HTTPStatus.OK, stop_job(state))
                 return
             if self.path == "/api/dependency-refresh":
                 try:
-                    job = start_dependency_probe(state, self.read_body_json())
+                    body = self.read_body_json()
+                    dashboard_event(
+                        "api_dependency_refresh_received",
+                        trade_date=body.get("trade_date"),
+                        output_root=body.get("output_root"),
+                        timeout=body.get("timeout"),
+                    )
+                    job = start_dependency_probe(state, body)
                     write_json_response(self, HTTPStatus.OK, {"job": public_job(job)})
                 except Exception as exc:
+                    dashboard_event(
+                        "api_dependency_refresh_failed",
+                        error=str(exc),
+                        traceback=traceback.format_exc(limit=8),
+                    )
                     write_json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
+            dashboard_event("api_unknown_post", path=self.path)
             write_json_response(self, HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     return Handler
@@ -2652,11 +2861,22 @@ def main() -> None:
         output_root = ROOT / output_root
     state = DashboardState(output_root, int(args.topic_id))
     server = ThreadingHTTPServer((args.host, int(args.port)), make_handler(state))
+    dashboard_event(
+        "dashboard_server_started",
+        host=args.host,
+        port=int(args.port),
+        output_root=str(output_root),
+        topic_id=int(args.topic_id),
+        git_branch=git_value(["branch", "--show-current"]),
+        git_head=git_value(["rev-parse", "--short", "HEAD"]),
+        event_log_path=str(EVENT_LOG_PATH),
+    )
     print(f"Forward Shadow dashboard: http://{args.host}:{args.port}/")
     print("paper-only; no broker API; no live order action.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
+        dashboard_event("dashboard_server_keyboard_interrupt")
         print("\nshutting down dashboard")
     finally:
         server.server_close()
