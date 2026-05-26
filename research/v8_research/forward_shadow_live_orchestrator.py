@@ -299,6 +299,68 @@ def copy_prior_seed_files(seed_root: Path, output_root: Path, prior: str, paths:
         shutil.copy2(src, dst)
 
 
+def publish_frozen_artifacts(output_root: Path, canonical_root: Path, trade_date: str) -> StepResult:
+    started = time.monotonic()
+    if output_root.resolve() == canonical_root.resolve():
+        return StepResult(
+            step_id="publish_frozen_artifacts",
+            scheduled_time="post_close",
+            status="skipped",
+            duration_seconds=round(time.monotonic() - started, 3),
+            return_code=0,
+            stdout_tail=json.dumps(
+                {
+                    "task": "publish_frozen_artifacts",
+                    "status": "skipped",
+                    "trade_date": trade_date,
+                    "reason": "output_root is already canonical_root",
+                },
+                ensure_ascii=False,
+            ),
+            stderr_tail="",
+            command=[],
+            message="Frozen artifacts already live in canonical output root.",
+        )
+
+    ok, message, paths = validate_prior_seed(output_root, trade_date)
+    errors: list[str] = []
+    copied: list[str] = []
+    if ok:
+        try:
+            copy_prior_seed_files(output_root, canonical_root, trade_date, paths)
+            copied = [
+                str(canonical_root / paths["signals"].relative_to(output_root)),
+                str(canonical_root / paths["entry"].relative_to(output_root)),
+            ]
+        except Exception as exc:
+            ok = False
+            errors.append(repr(exc))
+            message = f"failed to publish frozen artifacts: {exc!r}"
+
+    payload = {
+        "task": "publish_frozen_artifacts",
+        "status": "success" if ok else "failed",
+        "trade_date": trade_date,
+        "source_root": str(output_root),
+        "canonical_root": str(canonical_root),
+        "copied_files": copied,
+        "validation_message": message,
+        "errors": errors,
+        "note": "Publishes only frozen daily_signals and daily_entry_prices for the next trading day's T-1 settlement.",
+    }
+    return StepResult(
+        step_id="publish_frozen_artifacts",
+        scheduled_time="post_close",
+        status="success" if ok else "failed",
+        duration_seconds=round(time.monotonic() - started, 3),
+        return_code=0 if ok else 1,
+        stdout_tail=json.dumps(payload, ensure_ascii=False),
+        stderr_tail="\n".join(errors),
+        command=[],
+        message=message if ok else f"Publish frozen artifacts failed: {message}",
+    )
+
+
 def reset_settlement_outputs(output_root: Path, signal_date: str, settlement_date: str) -> StepResult:
     started = time.monotonic()
     targets = [
@@ -1128,7 +1190,23 @@ def main() -> None:
                     bool(args.send_notifications),
                 )
 
+    canonical_root = Path(args.prior_seed_root) if args.prior_seed_root else output_root
+    publish_result = publish_frozen_artifacts(output_root, canonical_root, trade_date)
+    results.append(publish_result)
     path = write_results(results, output_root, trade_date)
+    if publish_result.status == "failed":
+        write_live_status(
+            output_root,
+            trade_date,
+            "failed",
+            current_step_id="publish_frozen_artifacts",
+            scheduled_time="post_close",
+            completed_steps=len(results),
+            total_steps=len(results),
+            message=publish_result.message,
+            no_wait=bool(args.no_wait),
+        )
+        raise SystemExit(publish_result.stderr_tail or publish_result.message)
     write_live_status(
         output_root,
         trade_date,

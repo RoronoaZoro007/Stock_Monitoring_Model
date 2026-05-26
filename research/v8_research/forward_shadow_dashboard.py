@@ -755,7 +755,38 @@ def line_short(value: str) -> str:
     return mapping.get(str(value), str(value))
 
 
+def expected_prior_trade_date(trade_date: str) -> str | None:
+    summary_path = DEFAULT_OUTPUT_ROOT / "data_preparation" / f"{trade_date}_baseline_prepare_summary.json"
+    summary = read_json(summary_path)
+    prior = str(summary.get("prior_trade_date") or "").strip()
+    if prior.isdigit() and len(prior) == 8:
+        return prior
+    cal_path = ROOT / "data_tushare" / "raw" / "bootstrap" / "trade_cal.parquet"
+    if not cal_path.exists():
+        return None
+    try:
+        import pandas as pd
+
+        cal = pd.read_parquet(cal_path)
+        cal["cal_date"] = cal["cal_date"].astype(str)
+        rows = cal[cal["cal_date"].eq(trade_date)]
+        if not rows.empty:
+            open_rows = rows[pd.to_numeric(rows.get("is_open", 0), errors="coerce").fillna(0).astype(int).eq(1)]
+            if not open_rows.empty:
+                value = str(open_rows.iloc[0].get("pretrade_date") or "").strip()
+                if value.isdigit() and len(value) == 8:
+                    return value
+        open_days = cal[pd.to_numeric(cal.get("is_open", 0), errors="coerce").fillna(0).astype(int).eq(1)]["cal_date"]
+        candidates = sorted([d for d in open_days.astype(str).tolist() if d.isdigit() and len(d) == 8 and d < trade_date])
+        return candidates[-1] if candidates else None
+    except Exception:
+        return None
+
+
 def infer_prior_signal_date(output_root: Path, trade_date: str) -> str | None:
+    expected_prior = expected_prior_trade_date(trade_date)
+    if expected_prior:
+        return expected_prior
     candidates: set[str] = set()
     entry_dir = output_root / "daily_entry_prices"
     for path in entry_dir.glob("*_entry_prices.csv"):
