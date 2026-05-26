@@ -1840,7 +1840,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
                   <span id="dependencyMonitorStatus" class="status-chip pending">监测状态：空闲</span>
                   <span id="dependencyMonitorMeta">未手动刷新</span>
                 </div>
-                <button id="dependencyRefreshBtn" class="secondary">刷新依赖连通性</button>
+                <button id="dependencyRefreshBtn" class="secondary" disabled>刷新依赖连通性</button>
               </div>
               <div id="dependencyMeta" class="muted"></div>
               <div id="dependencyBanner"></div>
@@ -1915,6 +1915,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
   <script>
     const $ = (id) => document.getElementById(id);
     let activeRunJobId = localStorage.getItem('forwardShadowActiveJobId') || '';
+    let latestStatusData = null;
 
     function dateToYmd(v) {{ return (v || '').replaceAll('-', ''); }}
     function setMessage(text, bad=false) {{
@@ -2180,6 +2181,12 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       refresh();
     }}
     async function refreshDependencies() {{
+      const hasTushareCredential = !!$('tushareToken').value.trim() || !!latestStatusData?.env?.tushare_token_present;
+      if (!hasTushareCredential) {{
+        setMessage('缺少 TUSHARE_TOKEN：请输入 token 或在启动 dashboard 前配置环境变量后再刷新依赖连通性。', true);
+        updateDependencyRefreshAvailability();
+        return;
+      }}
       const payload = {{
         trade_date: dateToYmd($('tradeDate').value),
         output_root: $('outputRoot').value,
@@ -2200,7 +2207,19 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       setMessage('依赖连通性刷新已启动：' + (data.job?.job_id || '-'));
       refresh();
     }}
+    function updateDependencyRefreshAvailability() {{
+      const depJob = latestStatusData?.dependency_monitor || null;
+      const depRunning = !!depJob?.running;
+      const hasTushareCredential = !!$('tushareToken').value.trim() || !!latestStatusData?.env?.tushare_token_present;
+      $('dependencyRefreshBtn').disabled = depRunning || !hasTushareCredential;
+      if (!hasTushareCredential) {{
+        $('dependencyMonitorStatus').textContent = '监测状态：缺少 token';
+        $('dependencyMonitorStatus').className = 'status-chip failed';
+        $('dependencyMonitorMeta').textContent = '请输入 TUSHARE_TOKEN，或使用带环境变量的方式启动 dashboard；未带 token 的刷新结果无效。';
+      }}
+    }}
     function render(data) {{
+      latestStatusData = data;
       const job = data.job;
       const depJob = data.dependency_monitor || null;
       const artifacts = data.artifacts || {{}};
@@ -2225,7 +2244,7 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
       $('dependencyMonitorMeta').textContent = depJob
         ? ('job_id=' + (depJob.job_id || '-') + '；开始=' + (depJob.started_at_beijing || '-') + '；结束=' + (depJob.finished_at_beijing || '-'))
         : '未手动刷新';
-      $('dependencyRefreshBtn').disabled = depRunning;
+      updateDependencyRefreshAvailability();
       if (job?.snapshot_path) setMessage('任务快照已保存：' + job.snapshot_path, false);
       if (job?.snapshot_error) setMessage('任务快照保存失败：' + job.snapshot_error, true);
       $('currentStep').textContent = live.current_step_id || '-';
@@ -2394,6 +2413,8 @@ def index_html(default_output_root: Path, topic_id: int) -> str:
     $('stopBtn').addEventListener('click', stopJob);
     $('refreshBtn').addEventListener('click', refresh);
     $('dependencyRefreshBtn').addEventListener('click', refreshDependencies);
+    $('tushareToken').addEventListener('input', updateDependencyRefreshAvailability);
+    $('wxpusherToken').addEventListener('input', updateDependencyRefreshAvailability);
     function clearActiveRunAndRefresh() {{
       activeRunJobId = '';
       localStorage.removeItem('forwardShadowActiveJobId');
