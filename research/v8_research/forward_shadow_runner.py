@@ -48,6 +48,60 @@ STRATEGIES = [
     },
 ]
 
+SIGNAL_COLUMNS = [
+    "trade_date",
+    "strategy_id",
+    "candidate_id",
+    "tail_down_flag",
+    "U2_filter_flag",
+    "tail_down_gate_flag",
+    "original_v7_rank",
+    "final_selected_flag",
+    "no_trade_reason",
+    "code",
+    "name",
+    "score",
+    "entry_time",
+    "expected_entry_vwap",
+    "exit_rule",
+    "expected_exit_time",
+    "expected_exit_vwap",
+    "theoretical_5bp_return",
+    "execution_10bp_impact_return",
+    "estimated_impact_cost",
+    "estimated_fill_ratio",
+    "partial_fill_flag",
+    "zero_fill_flag",
+    "limit_up_block_flag",
+    "limit_down_block_flag",
+    "suspend_flag",
+    "daily_strategy_return",
+    "cumulative_strategy_return",
+    "position_weight",
+    "avg_amount_60d",
+    "rank_amount_60d",
+    "in_u2",
+    "market_tail_ret_median",
+    "freeze_time_beijing",
+    "paper_tracking_only",
+]
+
+QUALITY_COLUMNS = [
+    "trade_date",
+    "strategy_id",
+    "candidate_id",
+    "selected_count",
+    "estimated_avg_fill_ratio",
+    "partial_fill_count",
+    "zero_fill_count",
+    "limit_up_block_count",
+    "limit_down_block_count",
+    "suspend_count",
+    "status",
+]
+
+LEDGER_COLUMNS = SIGNAL_COLUMNS + ["ledger_id", "realized_return", "ledger_status"]
+
 
 def beijing_now() -> str:
     return datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
@@ -186,6 +240,32 @@ def signal_rows(
     return pd.DataFrame(rows), pd.DataFrame(status_rows)
 
 
+def no_trade_status_rows(
+    trade_date: str,
+    freeze_time: str,
+    no_trade_reason: str,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for strategy in STRATEGIES:
+        rows.append(
+            {
+                "trade_date": trade_date,
+                "strategy_id": strategy["strategy_id"],
+                "candidate_id": strategy["candidate_id"],
+                "tail_down_flag": False,
+                "market_tail_ret_median": np.nan,
+                "U2_filter_flag": strategy["use_u2_filter"],
+                "tail_down_gate_flag": strategy["use_tail_down_gate"],
+                "selected_count": 0,
+                "no_trade_reason": no_trade_reason,
+                "freeze_time_beijing": freeze_time,
+                "v7_locked_commit": V7_LOCKED_COMMIT,
+                "paper_tracking_only": True,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def empty_ledger_from_signals(signals: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     if signals.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -214,6 +294,14 @@ def empty_ledger_from_signals(signals: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
             }
         )
     return pd.concat(ledgers, ignore_index=True), pd.DataFrame(quality)
+
+
+def empty_output_frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    return (
+        pd.DataFrame(columns=SIGNAL_COLUMNS),
+        pd.DataFrame(columns=LEDGER_COLUMNS),
+        pd.DataFrame(columns=QUALITY_COLUMNS),
+    )
 
 
 def write_outputs(output_root: Path, trade_date: str, signals: pd.DataFrame, ledgers: pd.DataFrame, quality: pd.DataFrame, status: pd.DataFrame) -> None:
@@ -262,6 +350,9 @@ def append_or_replace(path: Path, new_rows: pd.DataFrame, keys: list[str]) -> No
     if path.exists():
         old = pd.read_csv(path)
         combined = pd.concat([old, new_rows], ignore_index=True)
+        for key in keys:
+            if key in combined.columns:
+                combined[key] = combined[key].astype(str)
         combined = combined.drop_duplicates(keys, keep="last")
     else:
         combined = new_rows.copy()
@@ -270,13 +361,21 @@ def append_or_replace(path: Path, new_rows: pd.DataFrame, keys: list[str]) -> No
 
 def run_signal_mode(args: argparse.Namespace) -> None:
     trade_date = str(args.trade_date)
-    score_df = load_score_file(Path(args.score_file), trade_date)
-    tail_down, market_tail_ret_median = compute_tail_down(score_df)
-    u2 = compute_u2_membership(score_df, Path(args.daily_file), trade_date)
-    top10 = top10_with_membership(score_df, u2)
-    freeze_time = beijing_now()
-    signals, status = signal_rows(top10, trade_date, tail_down, market_tail_ret_median, freeze_time)
-    ledgers, quality = empty_ledger_from_signals(signals)
+    freeze_time = str(args.freeze_time_override or beijing_now())
+    if args.no_trade_reason:
+        signals, ledgers, quality = empty_output_frames()
+        status = no_trade_status_rows(trade_date, freeze_time, str(args.no_trade_reason))
+        tail_down = False
+        market_tail_ret_median = np.nan
+    else:
+        if not args.score_file:
+            raise ValueError("--score-file is required unless --no-trade-reason is provided")
+        score_df = load_score_file(Path(args.score_file), trade_date)
+        tail_down, market_tail_ret_median = compute_tail_down(score_df)
+        u2 = compute_u2_membership(score_df, Path(args.daily_file), trade_date)
+        top10 = top10_with_membership(score_df, u2)
+        signals, status = signal_rows(top10, trade_date, tail_down, market_tail_ret_median, freeze_time)
+        ledgers, quality = empty_ledger_from_signals(signals)
     write_outputs(Path(args.output_root), trade_date, signals, ledgers, quality, status)
     print(
         json.dumps(
@@ -285,6 +384,7 @@ def run_signal_mode(args: argparse.Namespace) -> None:
                 "tail_down_flag": tail_down,
                 "market_tail_ret_median": market_tail_ret_median,
                 "signals": len(signals),
+                "no_trade_reason": str(args.no_trade_reason or ""),
                 "output_root": str(Path(args.output_root)),
                 "paper_tracking_only": True,
             },
@@ -298,9 +398,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Forward shadow paper-tracking runner. Does not place orders.")
     parser.add_argument("--mode", choices=["signal"], default="signal")
     parser.add_argument("--trade-date", required=True, help="YYYYMMDD")
-    parser.add_argument("--score-file", required=True, help="Daily v7 locked score matrix with <=14:50 features.")
+    parser.add_argument("--score-file", help="Daily v7 locked score matrix with <=14:50 features.")
     parser.add_argument("--daily-file", default=str(DEFAULT_DAILY_FILE), help="Daily data used only for t-1 U2 membership.")
     parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT))
+    parser.add_argument("--no-trade-reason", help="Freeze all four routes as no-trade when score/timing prerequisites are unavailable before 14:55.")
+    parser.add_argument("--freeze-time-override", help="Optional Asia/Shanghai timestamp to stamp as the logical freeze time.")
     args = parser.parse_args()
     if args.mode == "signal":
         run_signal_mode(args)
