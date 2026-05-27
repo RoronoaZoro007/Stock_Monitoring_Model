@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
@@ -18,9 +19,13 @@ import requests
 
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 DEFAULT_OUTPUT_ROOT = ROOT / "reports" / "tushare" / "v8_forward_shadow"
 DEFAULT_MINUTE_DIR = ROOT / "data_tushare" / "raw" / "stk_mins" / "freq=5min"
 DEFAULT_TOPIC_ID = 44635
+
+from research.v8_research.forward_shadow_settlement_reconciler import reconcile_outputs
 
 BUY_COMMISSION = 0.00025
 SELL_COMMISSION = 0.00025
@@ -1061,6 +1066,7 @@ def run_monitor(args: argparse.Namespace) -> dict[str, Any]:
     if args.send_notifications and args.checkpoint in {"default_1030", "settle_all"}:
         push_final_settlement_summary(execution, ledgers, quality, signal_date, settlement_date, args.topic_id, args.dry_run_push, paths)
     sha = write_sha(paths)
+    reconcile = reconcile_outputs(output_root)
 
     return {
         "signal_date": signal_date,
@@ -1073,6 +1079,7 @@ def run_monitor(args: argparse.Namespace) -> dict[str, Any]:
         "total_execution_records": int(len(read_csv_if_exists(paths["execution"]))),
         "quality_rows": int(len(quality)),
         "sha_rows": int(len(sha)),
+        "reconcile": reconcile,
         "paths": {k: str(v) for k, v in paths.items() if v.exists()},
     }
 

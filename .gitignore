@@ -29,6 +29,7 @@
 !research/v8_research/forward_shadow_full_flow_replay.py
 !research/v8_research/forward_shadow_runtime.py
 !research/v8_research/forward_shadow_exit_monitor.py
+!research/v8_research/forward_shadow_settlement_reconciler.py
 !research/v8_research/forward_shadow_data_guard.py
 !research/v8_research/prepare_forward_shadow_baseline.py
 !research/v8_research/forward_shadow_live_orchestrator.py
